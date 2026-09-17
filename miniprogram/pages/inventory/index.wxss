@@ -1,0 +1,2 @@
+.review{margin-top:22rpx}
+.review-item{padding:20rpx 0;border-bottom:1rpx solid #e5edde;word-break:break-all}

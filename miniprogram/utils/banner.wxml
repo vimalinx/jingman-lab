@@ -1,0 +1,1 @@
+<template name="banner"><view class="lab">本地演练 · 数据真实保存 · 不真实扣款</view><view wx:if="{{error}}" class="error">{{error}}</view></template>

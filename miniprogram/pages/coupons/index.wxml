@@ -1,0 +1,2 @@
+<import src="../../utils/banner.wxml"/>
+<view class="page"><view class="title">我的优惠券</view><template is="banner" data="{{error: error}}"/><view class="empty" wx:if="{{!items.length&&!error}}">暂无优惠券，有可用优惠券时会显示在这里。</view><view wx:for="{{items}}" wx:key="id" class="card row"><text class="price">¥{{item.amount}}</text><view><view class="name">{{item.title}}</view><view class="sub">满¥{{item.threshold}}使用 · {{item.expired?'已过期':item.state}}</view></view></view></view>

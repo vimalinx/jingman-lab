@@ -1,0 +1,19 @@
+<import src="../../utils/banner.wxml"/>
+<view class="page">
+  <view class="brand">京漫便民</view>
+  <view class="title">新鲜，也可以被认真验证。</view>
+  <view class="sub">这是原生微信小程序联调端。商品、订单、库存共用真实后端；支付、配送和打印为模拟服务。</view>
+  <include src="../../utils/error.wxml"/>
+  <form bindsubmit="submit">
+    <view class="label">本机后端地址</view><input name="base" value="{{base}}"/>
+    <view class="label">启动终端显示的访问口令</view><input name="key" password placeholder="粘贴实验室口令"/>
+    <view class="label">演练身份：{{roles[roleIndex]}}</view>
+    <radio-group class="role-grid" bindchange="changeRole">
+      <label class="role-option" wx:for="{{roles}}" wx:key="*this">
+        <radio value="{{index}}" checked="{{roleIndex===index}}" color="#14864e"/><text>{{item}}</text>
+      </label>
+    </radio-group>
+    <button class="primary" form-type="submit">进入京漫便民</button>
+  </form>
+  <view class="foot">仅供微信开发者工具本机联调。手机真机不能通过127.0.0.1访问电脑；没有接入正式微信登录与支付。</view>
+</view>

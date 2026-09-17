@@ -1,0 +1,50 @@
+{
+  "pages": [
+    "pages/connect/index",
+    "pages/home/index",
+    "pages/category/index",
+    "pages/product/index",
+    "pages/cart/index",
+    "pages/checkout/index",
+    "pages/orders/index",
+    "pages/detail/index",
+    "pages/profile/index",
+    "pages/addresses/index",
+    "pages/coupons/index",
+    "pages/workbench/index",
+    "pages/inventory/index",
+    "pages/lab/index",
+    "pages/rider/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "京漫便民",
+    "navigationBarBackgroundColor": "#f4f8f3",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f4f8f3"
+  },
+  "tabBar": {
+    "color": "#83927b",
+    "selectedColor": "#168849",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/category/index",
+        "text": "分类"
+      },
+      {
+        "pagePath": "pages/cart/index",
+        "text": "购物车"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "sitemapLocation": "sitemap.json"
+}

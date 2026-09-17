@@ -1,0 +1,15 @@
+{
+  "enabled": false,
+  "product": "lakala-cloud-retail",
+  "environment": "test",
+  "base_url": "https://fbbc.wsmsd.cn/b2c-oms-server",
+  "access_id": "",
+  "shop_id": null,
+  "private_key_file": "",
+  "server_public_key_file": "",
+  "signature_algorithm": "SHA1withRSA",
+  "provider_contract_confirmed": false,
+  "merchant_read_authorized": false,
+  "contract_reference": "",
+  "note": "公开云零售协议的单条码只读查询。先由拉卡拉确认具体产品、现行签名算法及测试参数。不是小程序支付协议；禁止填写生产地址冒充测试。私钥仅存源码外的权限0600文件。"
+}

@@ -1,0 +1,70 @@
+<import src="../../utils/banner.wxml"/>
+<view class="page">
+  <view class="title">商品与库存</view>
+  <template is="banner" data="{{error: error}}"/>
+  <form class="card" bindsubmit="queryMock">
+    <view class="section">拉卡拉协议 · 本地模拟查询</view>
+    <view class="foot">仅模拟条码查询，不是真实拉卡拉连接，不导入或同步库存。先由开发者启动模拟服务。</view>
+    <input name="barcode" type="text" maxlength="14" value="9900000000001" placeholder="模拟商品条码" disabled="{{mockLoading}}"/>
+    <button class="small plain" form-type="submit" loading="{{mockLoading}}" disabled="{{mockLoading}}">查询模拟商品</button>
+    <view wx:if="{{mockResult}}">
+      <view class="sub">模拟响应验签通过 · {{mockResult.count}} 条</view>
+      <view class="empty" wx:if="{{!mockResult.count}}">未找到模拟商品。</view>
+      <view class="review-item" wx:for="{{mockResult.items}}" wx:key="skuId">
+        <view>{{item.productName}} · ¥{{item.price}} / {{item.unit}}</view>
+        <view class="sub">模拟库存 {{item.inventorQuantity}} · {{item.weighing?'称重样例（不可直接计件导入）':'计件样例'}}</view>
+      </view>
+    </view>
+  </form>
+  <button class="small plain" bindtap="openReview" loading="{{reviewLoading}}" disabled="{{reviewLoading||saving}}">导入核对报告</button>
+  <view class="card review" wx:if="{{reviewOpen}}">
+    <view class="section">商品导入核对</view>
+    <view class="sub">来源 {{sourceTotal}} 条 · 待核对 {{reviewTotal}} 条</view>
+    <view class="foot">仅查看报告，不上传Excel，不修改收银库存。异常商品请核对原始资料，不要为下单强行上架。</view>
+    <view class="empty" wx:if="{{!sourceTotal}}">当前测试库没有导入来源记录。</view>
+    <view class="empty" wx:elif="{{!reviewTotal}}">当前没有待核对记录。</view>
+    <view class="review-item" wx:for="{{reviewItems}}" wx:key="id">
+      <view class="name">{{item.name}}</view>
+      <view class="sub">源行 {{item.source_row}} · 原库存 {{item.source_stock}}</view>
+      <view class="sub">{{item.issues}}</view>
+    </view>
+    <view class="pager" wx:if="{{reviewTotal}}">
+      <button class="small" bindtap="turnReview" data-delta="-1" disabled="{{reviewPage<=1}}">上一页</button>
+      <text>{{reviewPage}} / {{reviewPages}}</text>
+      <button class="small" bindtap="turnReview" data-delta="1" disabled="{{reviewPage>=reviewPages}}">下一页</button>
+    </view>
+    <button class="small plain" bindtap="closeReview">关闭报告</button>
+  </view>
+  <input value="{{q}}" placeholder="搜索商品名称、条码或SKU" bindinput="search" confirm-type="search" disabled="{{saving}}"/>
+  <view class="row spread"><text class="sub">共 {{total}} 条 · 每页20条</text><button wx:if="{{q}}" class="small" bindtap="clearSearch" disabled="{{saving}}">清除搜索</button></view>
+  <view class="sub" wx:if="{{loading}}">正在查询商品…</view>
+  <view class="empty" wx:if="{{!total&&!error&&!loading}}">没有匹配的商品，请换个关键词。</view>
+  <form wx:if="{{editing}}" class="card" bindsubmit="save">
+    <view class="section">{{editing.name}}</view>
+    <picker range="{{reasons}}" value="{{reasonIndex}}" bindchange="reason" disabled="{{saving}}"><view class="select">{{reasons[reasonIndex]}}</view></picker>
+    <input name="quantity" type="number" value="1" disabled="{{saving}}"/>
+    <view class="actions"><button form-type="submit" class="primary" loading="{{saving}}" disabled="{{saving}}">记录库存变更</button><button bindtap="cancelEdit" disabled="{{saving}}">取消</button></view>
+  </form>
+  <form wx:if="{{fulfillment}}" class="card" bindsubmit="saveFulfillment">
+    <view class="section">配送重量与自提</view>
+    <view class="name">{{fulfillment.name}}</view>
+    <view class="sub">每销售单位：{{fulfillment.unit}}；请输入一{{fulfillment.unit}}的实际配送计费重量（克）。</view>
+    <input name="weight" type="number" value="{{fulfillment.weight_g||''}}" placeholder="未确认请留空" disabled="{{saving}}"/>
+    <view class="foot">不要把毫升或商品名中的净含量直接当成配送重量；缺少重量时不可配送。</view>
+    <picker range="{{channels}}" value="{{channelIndex}}" bindchange="channel" disabled="{{saving||fulfillment.fulfillment_note}}"><view class="select">{{channels[channelIndex]}}</view></picker>
+    <view class="sub" wx:if="{{fulfillment.fulfillment_note}}">{{fulfillment.fulfillment_note}}；不能开放配送。</view>
+    <view class="actions"><button form-type="submit" class="primary" loading="{{saving}}" disabled="{{saving}}">保存履约资料</button><button bindtap="cancelFulfillment" disabled="{{saving}}">取消</button></view>
+  </form>
+  <view class="card" wx:for="{{items}}" wx:key="id">
+    <view class="name">{{item.name}} · ¥{{item.price}}</view>
+    <view class="sub" wx:if="{{item.pickup_only}}">仅限自提</view>
+    <view class="sub">配送重量：{{item.weight_g?item.weight_g+'克 / '+item.unit:'未确认'}}</view>
+    <view class="sub">账面{{item.on_hand}} − 预占{{item.reserved}} = 可售{{item.available}}</view>
+    <view class="actions">
+      <button class="small" data-id="{{item.id}}" bindtap="edit" disabled="{{saving}}">调整库存</button>
+      <button class="small" data-id="{{item.id}}" bindtap="editFulfillment" disabled="{{saving}}">重量 / 自提</button>
+      <button class="small plain" data-id="{{item.id}}" bindtap="toggle" disabled="{{saving}}">{{item.active?'下架':'上架'}}</button>
+    </view>
+  </view>
+  <view class="pager" wx:if="{{total}}"><button class="small" data-delta="-1" bindtap="turn" disabled="{{saving||loading||page<=1}}">上一页</button><text>{{page}} / {{pages}}</text><button class="small" data-delta="1" bindtap="turn" disabled="{{saving||loading||page>=pages}}">下一页</button></view>
+</view>

@@ -1,0 +1,15 @@
+{
+  "appid": "touristappid",
+  "projectname": "jingman-local-lab",
+  "description": "京漫便民本地联调源代码；不真实收款",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true
+  },
+  "libVersion": "latest"
+}

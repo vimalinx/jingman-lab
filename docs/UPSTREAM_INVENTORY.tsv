@@ -1,0 +1,12 @@
+directory	repository	branch	commit	description
+01-tdesign-retail	https://github.com/Tencent/tdesign-miniprogram-starter-retail.git	main	4280f410121c75775c4b1fd15c3849031f830cd7	腾讯官方原生微信零售小程序模板
+02-tdesign-components	https://github.com/Tencent/tdesign-miniprogram.git	develop	60efe2ae4d9c34f56844541526be4f4b4a4ee8b1	腾讯 TDesign 微信小程序组件库
+03-ruoyi-vue-pro	https://github.com/YunaiV/ruoyi-vue-pro.git	master	01a0eaf573a962eda54c83e46551cdd6bfbf207c	芋道/RuoYi-Vue-Pro 后端、权限、支付、商城与管理端
+04-yudao-mall-uniapp	https://github.com/yudaocode/yudao-mall-uniapp.git	master	3c4bf3864415054a88fe616a414e098972329412	芋道商城 UniApp 顾客端参考实现
+05-shopxo	https://github.com/gongfuxiang/shopxo.git	master	2f422020fc109a4ece7270c12e5735837d808bbd	ShopXO 商城、门店、进销存与扩展机制
+06-shopxo-uniapp	https://github.com/gongfuxiang/shopxo-uniapp.git	master	3e16f4327db88c2861215ea381c39b4002cace52	ShopXO UniApp 多端前台
+07-joolun-wx	https://github.com/Joolun/JooLun-wx.git	master	4ea34f40765ccce33ee5920fa36033123c8eca03	JooLun Java 微信商城与公众号管理
+08-coreshop	https://github.com/CoreUnion/CoreShop.git	master	b5d2310c04c70755068d0d702c127321990aeff3	CoreShop .NET 商城、库存、门店核销与打印
+09-kxmall	https://github.com/zhengkaixing/kxmall.git	v3.0.0-dev	140667d246481b2895dbdb5c29a1718b50ebf864	生鲜商城、商家端与骑手端流程参考
+10-mall4j	https://github.com/gz-yami/mall4j.git	master	07c22a3e080715aed91ff3854f904682730654f7	Mall4j Java B2C 商城参考（AGPL-3.0）
+11-wot-starter-retail	https://github.com/wot-ui/wot-starter-retail.git	main	c5f337b81fa0ebc219d210f1be43b6b321a6e843	Wot UI UniApp 零售模板备选

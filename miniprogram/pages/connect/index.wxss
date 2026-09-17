@@ -1,0 +1,3 @@
+.role-grid { display: flex; flex-wrap: wrap; margin: 12rpx 0 24rpx; }
+.role-option { width: 50%; box-sizing: border-box; min-height: 88rpx; display: flex; align-items: center; font-size: 25rpx; }
+.role-option radio { transform: scale(.8); flex-shrink: 0; }

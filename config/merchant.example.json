@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "merchant": { "name": "", "contact_phone": "", "address": "" },
+  "wechat": { "appid": "", "developer_added": false, "certified": false, "filed": false, "privacy_reviewed": false },
+  "delivery": { "start": "07:30", "end": "22:00", "hours_confirmed": false, "included_weight_g": 5000, "extra_step_g": 1000, "extra_step_cents": 150, "rounding": "ceil_kg", "rounding_confirmed": false, "coupon_limit": 1, "boundary_confirmed": false },
+  "lakala": { "product_name": "", "console_url": "", "shop_id": "", "api_authorized": false, "contract_reference": "", "miniapp_payment_enabled": false, "appid_bound": false },
+  "handoff": { "merchant_confirmed": false, "developer_received": false },
+  "note": "仅收集非秘密资料与确认状态，不放账号密码、AppSecret、私钥、证件或银行卡。这是交接清单，不是运行配置或上线开关。"
+}
