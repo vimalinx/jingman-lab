@@ -1,6 +1,6 @@
 const A = require('../../utils/api');
 Page(A.define({
-    data: { method: 'pickup', store: {}, addresses: [], addressIndex: 0,
+    data: { method: 'pickup', store: {}, addresses: [], addressIndex: 0, addressId: null, previewItems: [],
         coupons: [{ id: null, title: '不使用优惠券' }], couponIndex: 0, quote: null, error: '', submitting: false, pendingSubmission: false },
     async onLoad() {
         if (!A.requireLogin()) return;
@@ -18,14 +18,26 @@ Page(A.define({
         if (!this.items.length) throw new Error('没有结算商品');
         const [addresses, coupons, store] = await Promise.all([A.call('/addresses'), A.call('/coupons'), A.call('/store')]);
         this.setData({ addresses, store, coupons: [{ id: null, title: '不使用优惠券' }, ...coupons.filter(c => c.state === 'available' && !c.expired)] });
+        this.restoreAddress(addresses);
+        const products = await A.call('/products');
+        this.setData({ previewItems: this.items.map(i => ({ ...A.photo(products.find(p => p.id === i.sku_id) || {}), quantity:i.quantity })) });
         this.initialized = true;
         await this.refresh();
     },
     async onShow() {
         if (this.initialized && !this.data.pendingSubmission && !this.completedOrder) {
-            this.setData({ addresses: await A.call('/addresses'), store: await A.call('/store') });
+            const addresses = await A.call('/addresses');
+            this.setData({ addresses, store: await A.call('/store') });
+            this.restoreAddress(addresses);
             await this.refresh();
         }
+    },
+    restoreAddress(addresses) {
+        const key = 'jm-address:' + A.pendingScope();
+        const id = wx.getStorageSync(key) || this.data.addressId;
+        const index = id ? addresses.findIndex(a => a.id === id) : (addresses.length ? 0 : -1);
+        this.setData({ addressIndex:index, addressId:addresses[index]?.id || null });
+        if (index < 0) wx.removeStorageSync(key);
     },
     async refresh() {
         if (this.data.submitting || this.data.pendingSubmission || this.completedOrder) return;
@@ -37,6 +49,7 @@ Page(A.define({
             this.setData({ addresses, store, coupons: [{ id: null, title: '不使用优惠券' }, ...coupons.filter(c => c.state === 'available' && !c.expired)] });
             this.restoreOnly = false;
         }
+        if (this.data.method === 'delivery' && !this.data.addresses[this.data.addressIndex]) { this.setData({error:'请先添加或选择收货地址，再确认配送费用'}); return; }
         let q;
         try {
             q = await A.call('/quotes', 'POST', { store_id: 1, method: this.data.method, items: this.items,
@@ -54,7 +67,7 @@ Page(A.define({
             baseShipping: A.money(q.shipping_detail?.base_cents || 0), extraShipping: A.money(q.shipping_detail?.extra_weight_cents || 0) } });
     },
     async method(e) { if (this.data.submitting || this.data.pendingSubmission) return; this.setData({ method: e.currentTarget.dataset.method }); await this.refresh(); },
-    async address(e) { if (this.data.submitting || this.data.pendingSubmission) return; this.setData({ addressIndex: Number(e.detail.value) }); await this.refresh(); },
+    async address(e) { if (this.data.submitting || this.data.pendingSubmission) return; const index=Number(e.detail.value); this.setData({ addressIndex:index, addressId:this.data.addresses[index]?.id }); wx.setStorageSync('jm-address:' + A.pendingScope(),this.data.addressId); await this.refresh(); },
     async coupon(e) { if (this.data.submitting || this.data.pendingSubmission) return; this.setData({ couponIndex: Number(e.detail.value) }); await this.refresh(); },
     async submit() {
         if (this.data.submitting || this.completedOrder || (!this.data.quote && !this.pendingOrder)) return;
@@ -88,5 +101,5 @@ Page(A.define({
         } finally { this.setData({ submitting: false }); }
     },
     orders() { A.go('orders'); },
-    addresses() { if (!this.data.submitting && !this.data.pendingSubmission) A.go('addresses'); }
+    addresses() { if (!this.data.submitting && !this.data.pendingSubmission) wx.navigateTo({url:'/pages/addresses/index?select=1'}); }
 }));

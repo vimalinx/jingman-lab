@@ -33,6 +33,21 @@ PREFIX = '/b2c-oms-server'
 MODE = 'jingman-local-mock-v1'
 
 
+def mock_file(path):
+    """Windows support for generated MOCK files only; real adapter stays strict."""
+    if os.name != 'nt':
+        return private_file(path)
+    p = Path(path)
+    if not p.is_absolute() or p.resolve().is_relative_to(ROOT):
+        raise IntegrationBlocked('模拟配置须位于源码之外')
+    if any(part.is_symlink() or (hasattr(part, 'is_junction') and part.is_junction())
+           for part in [p, *p.parents]):
+        raise IntegrationBlocked('模拟配置不能通过符号链接或目录联接读取')
+    if not p.is_file() or p.stat().st_size > 65536:
+        raise IntegrationBlocked('模拟配置文件无效或过大')
+    return p.read_bytes()
+
+
 def initialize(directory: Path, port: int):
     directory = directory.absolute()
     if directory.resolve().is_relative_to(ROOT) or directory.exists():
@@ -60,7 +75,7 @@ def initialize(directory: Path, port: int):
 
 
 def load_config(path):
-    config = json.loads(private_file(path))
+    config = json.loads(mock_file(path))
     if not isinstance(config, dict) or config.get('mode') != MODE:
         raise IntegrationBlocked('只接受专用本地模拟配置，不接受商家配置')
     match = re.fullmatch(r'http://127\.0\.0\.1:([0-9]{4,5})/b2c-oms-server',
@@ -73,14 +88,14 @@ def load_config(path):
 
 
 def private_key(path):
-    key = serialization.load_pem_private_key(private_file(path), password=None)
+    key = serialization.load_pem_private_key(mock_file(path), password=None)
     if not isinstance(key, rsa.RSAPrivateKey) or key.key_size < 2048:
         raise IntegrationBlocked('模拟RSA私钥须不少于2048位')
     return key
 
 
 def public_key(path):
-    key = serialization.load_pem_public_key(private_file(path))
+    key = serialization.load_pem_public_key(mock_file(path))
     if not isinstance(key, rsa.RSAPublicKey) or key.key_size < 2048:
         raise IntegrationBlocked('模拟RSA公钥须不少于2048位')
     return key
@@ -109,6 +124,13 @@ def create_mock(config_path, scenario='success'):
     if scenario not in SCENARIOS:
         raise IntegrationBlocked('未知模拟场景')
     config = load_config(config_path)
+    scenario_file = Path(config_path).parent / 'scenario.json'
+    def current_scenario():
+        if scenario_file.exists():
+            selected = json.loads(scenario_file.read_text(encoding='utf-8')).get('scenario')
+            if selected in SCENARIOS: return selected
+            raise IntegrationBlocked('无效模拟场景')
+        return scenario
     private = private_key(config['private_key_file'])
     public = public_key(config['client_public_key_file'])
     app = FastAPI(title='京漫本地拉卡拉协议模拟（非厂商沙箱）', docs_url=None, redoc_url=None)
@@ -128,7 +150,7 @@ def create_mock(config_path, scenario='success'):
 
     @app.get('/health')
     def health():
-        return {'mock': True, 'scenario': scenario, 'operation': PREFIX + OPERATION,
+        return {'mock': True, 'scenario': current_scenario(), 'operation': PREFIX + OPERATION,
                 'real_provider_called': False, 'inventory_written': False}
 
     @app.post(PREFIX + OPERATION)
@@ -164,11 +186,12 @@ def create_mock(config_path, scenario='success'):
                 raise ValueError()
         except (ValueError, TypeError):
             return reply(sid if isinstance(sid, str) else '', 'MOCK_INPUT', status=203)
-        if scenario == 'timeout':
+        selected = current_scenario()
+        if selected == 'timeout':
             await asyncio.sleep(7)  # Client uses a bounded 3 second timeout.
-        return reply(sid, 'MOCK_BUSINESS_ERROR' if scenario == 'business-error' else '200',
-                     [] if scenario == 'empty' else fixture(barcode),
-                     status=203 if scenario == 'http203' else 200, fault=scenario)
+        return reply(sid, 'MOCK_BUSINESS_ERROR' if selected == 'business-error' else '200',
+                     [] if selected == 'empty' else fixture(barcode),
+                     status=203 if selected == 'http203' else 200, fault=selected)
 
     return app
 

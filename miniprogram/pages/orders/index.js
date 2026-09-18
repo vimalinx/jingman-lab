@@ -1,3 +1,3 @@
 const A = require('../../utils/api');
-Page(A.define({ data: { orders: [], pendingSubmission: false, error: '' }, async onShow() { if (A.requireLogin())
-        await this.load(); }, async load() { this.setData({ orders: (await A.call('/orders')).map(A.order), pendingSubmission: !!A.pending(), error: '' }); }, resume() { A.go('checkout'); }, open(e) { A.go('detail', e.currentTarget.dataset.id); } }));
+Page(A.define({ data: { status:'', filterLabel:'全部订单', orders: [], pendingSubmission: false, error: '' }, onLoad(options) { const status=options?.status||'';this.setData({status,filterLabel:A.states[status]||'全部订单'}); }, async all() {this.setData({status:'',filterLabel:'全部订单'});await this.load();}, async onShow() { if (A.requireLogin())
+        await this.load(); }, async load() { this.setData({ orders: (await A.call('/orders')).filter(o=>!this.data.status||o.state===this.data.status).map(A.order), pendingSubmission: !!A.pending(), error: '' }); }, resume() { A.go('checkout'); }, open(e) { A.go('detail', e.currentTarget.dataset.id); } }));

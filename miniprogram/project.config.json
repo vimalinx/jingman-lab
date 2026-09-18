@@ -1,7 +1,7 @@
 {
   "appid": "touristappid",
-  "projectname": "jingman-local-lab",
-  "description": "京漫便民本地联调源代码；不真实收款",
+  "projectname": "jingman-windows-acceptance",
+  "description": "京漫便民 Windows 人工验收版 · 本机模拟支付与收银",
   "compileType": "miniprogram",
   "miniprogramRoot": "./",
   "setting": {

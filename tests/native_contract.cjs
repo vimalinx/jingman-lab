@@ -6,7 +6,7 @@ const EVIDENCE=process.env.JINGMAN_NATIVE_EVIDENCE_DIR||path.join(ROOT,'evidence
 fs.mkdirSync(EVIDENCE,{recursive:true});
 const base=process.argv[2]||'http://127.0.0.1:8765',access=JSON.parse(fs.readFileSync(process.argv[3],'utf8')).access_key;
 const state=new Map(),toasts=[],steps=[];let lastNavigation='';
-global.wx={getStorageSync:k=>state.get(k)||'',setStorageSync:(k,v)=>state.set(k,v),removeStorageSync:k=>state.delete(k),getStorageInfoSync:()=>({keys:[...state.keys()]}),pageScrollTo:()=>{},showToast:v=>toasts.push(v),showModal:v=>toasts.push(v),switchTab:v=>{lastNavigation=v.url},navigateTo:v=>{lastNavigation=v.url},reLaunch:v=>{lastNavigation=v.url;v.complete?.()},request:o=>{
+global.wx={getStorageSync:k=>state.get(k)||'',setStorageSync:(k,v)=>state.set(k,v),removeStorageSync:k=>state.delete(k),getStorageInfoSync:()=>({keys:[...state.keys()]}),pageScrollTo:()=>{},showToast:v=>toasts.push(v),showModal:v=>{toasts.push(v);v.success?.({confirm:true})},switchTab:v=>{lastNavigation=v.url},navigateTo:v=>{lastNavigation=v.url},reLaunch:v=>{lastNavigation=v.url;v.complete?.()},request:o=>{
  fetch(o.url,{method:o.method,headers:o.header,body:o.data===undefined?undefined:JSON.stringify(o.data)}).then(async r=>o.success({statusCode:r.status,data:await r.json()})).catch(e=>o.fail({errMsg:e.message}));
 }};
 const A=require(MP+'/utils/api');
@@ -44,11 +44,37 @@ async function login(role){await A.login(access,role)}
   await login('manager');await invoke(staff,'load');await invoke(staff,'approve',tap({id:rid}));await invoke(lab,'worker');assert.ok(lab.data.report.ok);pass('原生店长审核售后、退款队列执行与对账');
   const inv=page('inventory');await invoke(inv,'onShow');const before=inv.data.items.find(p=>p.id===101).on_hand;await invoke(inv,'edit',tap({id:101}));await invoke(inv,'reason',value('2'));await invoke(inv,'save',value({quantity:'1'}));assert.equal(inv.data.items.find(p=>p.id===101).on_hand,before-1);pass('原生模拟POS扣库存并写入流水');
   const work=page('workbench');await invoke(work,'onShow');assert.equal(work.data.d.order_count,1);pass('原生店长工作台使用数据库实数');
-  await login('customer');const addr=page('addresses');await invoke(addr,'onShow');await invoke(addr,'create');await invoke(addr,'save',value({...addr.data.editing,latitude:'31.234',longitude:'121.48'}));assert.equal(addr.data.items.length,2);const added=addr.data.items.at(-1);await invoke(addr,'edit',tap({id:added.id}));await invoke(addr,'save',value({...added,address:'修改后的虚构地址101',latitude:'31.234',longitude:'121.48'}));await invoke(addr,'remove',tap({id:added.id}));assert.equal(addr.data.items.length,1);pass('原生手动地址新增、编辑与删除，无定位依赖');
+  await login('customer');const addr=page('addresses');await invoke(addr,'onShow');await invoke(addr,'create');await invoke(addr,'save',value({...addr.data.editing,name:'验收顾客',mobile:'18800000003',address:'虚构验收小区2号楼201',latitude:'31.234',longitude:'121.48'}));assert.equal(addr.data.items.length,2);const added=addr.data.items.at(-1);await invoke(addr,'edit',tap({id:added.id}));await invoke(addr,'save',value({...added,address:'修改后的虚构地址101',latitude:'31.234',longitude:'121.48'}));await invoke(addr,'remove',tap({id:added.id}));assert.equal(addr.data.items.length,1);pass('原生手动地址新增、编辑与删除，无定位依赖');
   const profile=page('profile');await invoke(profile,'onShow');assert.equal(profile.data.count,1);await invoke(profile,'notifications');const coupons=page('coupons');await invoke(coupons,'onShow');assert.equal(coupons.data.items.length,3);pass('原生个人中心、消息、订单数与优惠券读取');
   await login('customer2');const orders=page('orders');await invoke(orders,'onShow');assert.equal(orders.data.orders.length,0);await login('other_store');await invoke(orders,'onShow');assert.equal(orders.data.orders.length,0);pass('原生第二顾客及第二门店不能读取第一门店订单');
-  await login('customer');await invoke(product,'onLoad',{id:102});await invoke(product,'buy');const pickup=page('checkout');await invoke(pickup,'onLoad');await invoke(pickup,'submit');const pid=new URL('http://local'+lastNavigation).searchParams.get('id');const d=page('detail');await invoke(d,'onLoad',{id:pid});await invoke(d,'pay',tap({success:true}));await login('picker');await invoke(d,'accept');await invoke(d,'pick');await invoke(d,'ready');const code=d.data.o.pickup_code;await invoke(d,'pickup',value({code}));assert.equal(d.data.o.state,'completed');pass('原生第二条闭环：自提下单付款、拣货、核销');
+  await login('customer');await invoke(product,'onLoad',{id:102});await invoke(product,'buy');const pickup=page('checkout');await invoke(pickup,'onLoad');await invoke(pickup,'submit');const pid=new URL('http://local'+lastNavigation).searchParams.get('id');const d=page('detail');await invoke(d,'onLoad',{id:pid});await invoke(d,'pay',tap({success:true}));await login('picker');await invoke(d,'accept');await invoke(d,'pick');await invoke(d,'ready');const code=d.data.o.pickup_code;
+  await login('customer');const pickupHome=page('home');await invoke(pickupHome,'onShow');assert.equal(pickupHome.data.pickupOrders.length,1);assert.equal(pickupHome.data.pickupOrders[0].pickup_code,code);
+  await invoke(pickupHome,'onHide');await invoke(pickupHome,'onShow');assert.equal(pickupHome.data.pickupOrders[0].id,pid);
+  await login('customer2');const privateHome=page('home');await invoke(privateHome,'onShow');assert.equal(privateHome.data.pickupOrders.length,0);await invoke(privateHome,'onHide');
+  await login('picker');await invoke(d,'pickup',value({code}));
+  await login('customer');await invoke(pickupHome,'refreshPickup');assert.equal(pickupHome.data.pickupOrders.length,0);await invoke(pickupHome,'onHide');
+  pass('首页自提提醒：备好显示、重进保留、账号隔离、核销后隐藏');assert.equal(d.data.o.state,'completed');pass('原生第二条闭环：自提下单付款、拣货、核销');
   await login('manager');await invoke(lab,'worker');assert.ok(lab.data.report.ok);const sample=await A.call('/lab/sample-order','POST',{},'native-sample-idem');const sample2=await A.call('/lab/sample-order','POST',{},'native-sample-idem');assert.equal(sample.order_id,sample2.order_id);await invoke(lab,'worker');assert.ok(lab.data.report.ok);pass('演练订单创建幂等且最终对账一致');
+  await login('customer2');
+  const shoppingHome=page('home'); await invoke(shoppingHome,'onShow');
+  assert.equal(shoppingHome.data.shoppingCount,0);
+  await Promise.all([invoke(shoppingHome,'add',tap({id:101})),invoke(shoppingHome,'add',tap({id:101})),invoke(shoppingHome,'add',tap({id:110}))]);
+  assert.equal(shoppingHome.data.shoppingCount,3); assert.equal(shoppingHome.data.shoppingTotal,'30.74');
+  assert.equal(shoppingHome.data.products.find(p=>p.id===101).inCart,2);
+  await invoke(shoppingHome,'cartOpen');assert.equal(shoppingHome.data.shoppingOpen,true);
+  await invoke(shoppingHome,'cartAdjust',tap({id:101,delta:-1}));assert.equal(shoppingHome.data.shoppingCount,2);
+  pass('新增：连续加购不丢数量，卡片、底栏和展开清单实时一致');
+  const secondCart=await A.call('/cart');for(const item of secondCart.items)await A.call('/cart','PUT',{sku_id:item.id,quantity:item.quantity,selected:false});
+  await invoke(shoppingHome,'onShow');assert.equal(shoppingHome.data.shoppingSelected,0);assert.equal(shoppingHome.data.shoppingTotal,'0.00');
+  for(const item of secondCart.items)await A.call('/cart','PUT',{sku_id:item.id,quantity:0});
+  await invoke(shoppingHome,'onShow');assert.equal(shoppingHome.data.shoppingCount,0);assert.equal(shoppingHome.data.shoppingCart.length,0);
+  pass('新增：全部取消勾选不能结算，删空后清单和金额复位');
+  const addressCheckout=page('checkout');state.set('jm-address:'+A.pendingScope(),82);
+  addressCheckout.restoreAddress([{id:81},{id:82}]);assert.equal(addressCheckout.data.addressIndex,1);
+  addressCheckout.restoreAddress([{id:82}]);assert.equal(addressCheckout.data.addressIndex,0);assert.equal(addressCheckout.data.addressId,82);
+  addressCheckout.restoreAddress([]);assert.equal(addressCheckout.data.addressId,null);assert.equal(addressCheckout.data.addressIndex,-1);
+  const blankAddress=page('addresses');blankAddress.create();assert.equal(blankAddress.data.editing.name,'');assert.equal(blankAddress.data.editing.mobile,'');assert.equal(blankAddress.data.editing.address,'');
+  pass('新增：地址按编号跨重排保留，删除后不冒用地址，新建表单留空');
   fs.writeFileSync(path.join(EVIDENCE,'native-reconciliation.json'),JSON.stringify(lab.data.report,null,2));
   fs.writeFileSync(path.join(EVIDENCE,'native-results.json'),JSON.stringify({passed:true,mode:'Node Page controller contract + live HTTP, not WeChat rendering',steps,expected_rejected_payment:true},null,2));console.log('PASS TOTAL',steps.length);
  }catch(e){fs.writeFileSync(path.join(EVIDENCE,'native-results.json'),JSON.stringify({passed:false,steps,error:e.stack},null,2));console.error(e);process.exitCode=1}

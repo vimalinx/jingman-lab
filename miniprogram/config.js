@@ -1,2 +1,2 @@
 // 仅用于开发者工具本机联调；手机上的127.0.0.1不是你的电脑。
-module.exports = { baseURL: 'http://127.0.0.1:8765' };
+module.exports = { baseURL: 'http://127.0.0.1:8874' };

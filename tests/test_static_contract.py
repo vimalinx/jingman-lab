@@ -33,5 +33,5 @@ def test_clients_have_no_real_payment_call():
  # Production hooks must not accidentally become active in an explicit lab release.
  mp='\n'.join(p.read_text() for p in (ROOT/'miniprogram').rglob('*.js'))
  assert 'wx.requestPayment(' not in mp and 'wx.login(' not in mp
- assert '/lab/pay/' in mp
+ assert '/simulate' in mp and '/payments/' in mp
  assert 'APP_SECRET' not in mp

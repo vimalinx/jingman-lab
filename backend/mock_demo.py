@@ -14,6 +14,7 @@ from .lakala_readonly import ROOT
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
+    parser.add_argument('--no-worker', action='store_true', help='人工验收时在实验室页面手动重试任务')
     args = parser.parse_args()
     directory = args.directory
     if not directory.is_absolute() or directory.resolve().is_relative_to(ROOT):
@@ -27,7 +28,7 @@ def main():
             except OSError:
                 parser.error(f'端口{port}已占用；不会停止已有服务。若是当前模拟服务，可直接继续使用。')
     directory.mkdir(parents=True, mode=0o700, exist_ok=True)
-    if directory.is_symlink() or directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o077:
+    if directory.is_symlink() or (os.name != 'nt' and (directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o077)):
         parser.error('模拟目录须由当前用户拥有、非符号链接且权限0700')
     protocol = directory / 'protocol'
     if not protocol.exists():
@@ -54,7 +55,7 @@ def main():
         print('本地协议模拟验签通过。下方为京漫实验室地址和口令；所有数据均为模拟。', flush=True)
         app = subprocess.Popen([sys.executable, '-m', 'backend', '--port', '8874',
                                 '--data-dir', str(directory / 'app'), '--lakala-mock-config',
-                                str(protocol / 'client.json')], cwd=ROOT)
+                                str(protocol / 'client.json')] + (['--no-worker'] if args.no_worker else []), cwd=ROOT)
         children.append(app)
         while all(child.poll() is None for child in children):
             time.sleep(.5)

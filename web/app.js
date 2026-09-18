@@ -54,11 +54,14 @@ async function login(persona = S.persona) {
     S.token = result.token;
     S.user = result.user;
     S.persona = persona;
+    S.pickupOrders=[]; S.pickupOffline=false;
+    S.checkoutPreferencesLoaded=false; S.addressId=null; S.addressChosen=false; S.quote=null; S.checkout=null; sessionStorage.removeItem('jm-checkout');
     for (const [k, v] of Object.entries({ 'jm-key': S.key, 'jm-token': S.token, 'jm-user': JSON.stringify(S.user), 'jm-persona': persona }))
         sessionStorage.setItem(k, v);
 }
 async function globals() {
     [S.products, S.categories, S.store] = await Promise.all([api('/products?store_id=' + (S.user?.store_id || 1)), api('/categories'), api('/store?store_id=' + (S.user?.store_id || 1))]);
+    if(isCustomer()&&route().page==='home'){const token=S.token;try{const orders=await api('/orders');if(token===S.token){S.pickupOrders=readyPickups(orders);S.pickupOffline=false;}}catch(error){if(token===S.token)S.pickupOffline=true;}}
     S.cart = isCustomer() ? await api('/cart') : { items: [], count: 0, subtotal_cents: 0 };
 }
 function navItems() {
@@ -78,7 +81,7 @@ function shell(content, page) {
     const nav = navItems();
     const active = page === 'order' ? 'orders' : page === 'product' ? 'categories' : page;
     const roleOptions = [['customer', '顾客 · 本地预览'], ['customer2', '顾客 · 第二账号'], ['manager', '店长工作台'], ['picker', '拣货员视角'], ['rider', '配送员视角'], ['other_store', '二号店 · 权限测试']].filter(([v]) => !S.store?.local_preview || v !== 'other_store').map(([v, l]) => `<option value="${v}" ${S.persona === v ? 'selected' : ''}>${l}</option>`).join('');
-    return `<header class="header"><div class="header-inner">${brand()}<nav class="top-links" aria-label="工作区"><a href="#/home" data-action="shop" class="${isCustomer() ? 'current' : ''}">在线超市</a><a href="#/dashboard" data-action="work" class="${!isCustomer() && page !== 'lab' ? 'current' : ''}">门店工作台</a><a href="#/lab" data-action="lab" class="${page === 'lab' ? 'current' : ''}">联调实验室</a></nav><span class="pill amber header-lab"><span class="dot"></span>本地演练 · 不真实扣款</span><select class="persona" aria-label="切换演练身份" data-change="persona">${roleOptions}</select></div></header>
+    return shoppingDock(page) + `<header class="header"><div class="header-inner">${brand()}<nav class="top-links" aria-label="工作区"><a href="#/home" data-action="shop" class="${isCustomer() ? 'current' : ''}">在线超市</a><a href="#/dashboard" data-action="work" class="${!isCustomer() && page !== 'lab' ? 'current' : ''}">门店工作台</a><a href="#/lab" data-action="lab" class="${page === 'lab' ? 'current' : ''}">联调实验室</a></nav><span class="pill amber header-lab"><span class="dot"></span>本地演练 · 不真实扣款</span><select class="persona" aria-label="切换演练身份" data-change="persona">${roleOptions}</select></div></header>
  <div class="layout"><aside class="sidebar"><div class="store-tile"><div class="row">${icon('store')}<b>${e(S.store.name)}</b></div><p><span class="green">${S.store.open ? '● 营业中' : '● 已打烊'}</span> · 模拟门店</p><p>${S.store.local_preview ? '园区配送待确认 / 支持自提' : S.store.radius_km + 'km 配送范围 / 支持自提'}</p></div><nav class="side-menu" aria-label="侧栏">${nav.map(([p, i, l]) => `<a href="#/${p}" class="${active === p ? 'active' : ''}">${icon(i)}${l}${p === 'cart' && S.cart.count ? `<span class="badge">${S.cart.count}</span>` : ''}</a>`).join('')}</nav><div class="side-note">新鲜好物，健康每一天。<br>真实数据流 · 模拟外部服务<br><span class="green">● SQLite 已连接</span></div></aside><main class="main" id="main">${content}<footer class="footer">JINGMAN · 京漫便民本地联调实验室<br>${S.store.local_preview ? '门店商品快照 · 支付、配送、打印为本地演练' : '商品图片与地址为演练资料，支付 / 配送 / 打印均不连接真实服务。'}</footer></main></div>
  <nav class="bottom-nav" aria-label="底部导航">${(isCustomer() ? [nav[0], nav[1], nav[2], nav[4]] : nav.slice(0, 4)).map(([p, i, l]) => `<a href="#/${p}" class="${active === p ? 'active' : ''}">${icon(i)}<span>${p === 'categories' ? '分类' : p === 'profile' ? '我的' : l}</span>${p === 'cart' && S.cart.count ? `<span class="badge">${S.cart.count}</span>` : ''}</a>`).join('')}</nav>`;
 }
@@ -88,12 +91,12 @@ function empty(title, message, buttonHtml = '') { return `<div class="empty">${i
 function searchForm(query = '', target = 'categories') { return `<form class="search" data-form="search" data-target="${target}">${icon('search')}<input type="search" name="q" value="${e(query)}" placeholder="搜索商品，例如：香蕉、牛奶、草莓" aria-label="搜索商品"><button aria-label="开始搜索">${icon('arrow')}</button></form>`; }
 function productCard(p, list = false) {
     const disabled = !p.active || p.available <= 0;
-    return `<article class="${list ? 'list-product' : 'product-card'}" data-sku="${p.id}">${!list && disabled ? '<span class="sold">已售罄</span>' : ''}<a href="#/product?id=${p.id}" aria-label="查看${e(p.name)}">${image(p.image, list ? '' : 'product-photo', p.name)}</a><div class="product-info">${p.pickup_only ? fulfillmentBadge(p) : `<span class="product-tag">${e(p.tag)}</span>`}<a href="#/product?id=${p.id}"><h3>${e(p.name)}</h3></a><p class="muted">${e(p.unit)}${list ? ' · 门店直供' : ''}</p><div class="row spread"><div>${amount(p.price_cents)}${p.old_price_cents > p.price_cents ? `<span class="old-price">¥${money(p.old_price_cents)}</span>` : ''}</div><button class="add" data-action="add" data-id="${p.id}" aria-label="添加${e(p.name)}" ${disabled ? 'disabled' : ''}>${icon('plus')}</button></div></div></article>`;
+    return `<article class="${list ? 'list-product' : 'product-card'}" data-sku="${p.id}">${!list && disabled ? '<span class="sold">已售罄</span>' : ''}<a href="#/product?id=${p.id}" aria-label="查看${e(p.name)}">${image(p.image, list ? '' : 'product-photo', p.name)}</a><div class="product-info">${p.pickup_only ? fulfillmentBadge(p) : `<span class="product-tag">${e(p.tag)}</span>`}<a href="#/product?id=${p.id}"><h3>${e(p.name)}</h3></a><p class="muted">${e(p.unit)}${list ? ' · 门店直供' : ''}</p><div class="row spread"><div>${amount(p.price_cents)}${cartQuantityLabel(p.id)}${p.old_price_cents > p.price_cents ? `<span class="old-price">¥${money(p.old_price_cents)}</span>` : ''}</div><button class="add" data-action="add" data-id="${p.id}" aria-label="添加${e(p.name)}" ${disabled ? 'disabled' : ''}>${icon('plus')}</button></div></div></article>`;
 }
 function home() {
     const catImages = { 1: 'lettuce', 2: 'milk', 3: 'cola', 4: 'snack', 5: 'oil', 6: 'daily' };
     const featured = S.products.filter(p => p.active && p.available > 0).slice(0, 12);
-    return `${head('今天，也要好好生活。', '从家门口的好食材开始。', `<span class="pill header-status"><span class="dot"></span>${S.store.open ? '门店营业中' : '门店已打烊'}</span>`)}${searchForm()}
+    return `<div id="pickup-notice" aria-live="polite">${pickupNotice()}</div>${head('今天，也要好好生活。', '从家门口的好食材开始。', `<span class="pill header-status"><span class="dot"></span>${S.store.open ? '门店营业中' : '门店已打烊'}</span>`)}${searchForm()}${firstShoppingGuide()}
  <section class="hero"><img class="hero-image" src="/assets/hero.webp" alt="木箱里的新鲜蔬菜"><div class="hero-copy"><div class="eyebrow">FRESH PICKS, EVERY DAY</div><h1>新鲜的日常，<br>就在你身边。</h1><p>当季好食材 · 门店精心选 · 把新鲜带回家</p><a class="button" href="#/categories">去逛一逛 ${icon('arrow')}</a></div></section>
  ${S.store.local_preview ? `<section class="card"><h3>${e(S.store.name)}</h3><p>${e(S.store.address)}</p><p>营业时间 ${e(S.store.hours)} · 客服 ${e(S.store.phone)}</p><p class="footnote">${e(S.store.delivery_rules ? String(S.store.notice || '').replace('免配送费', '免基础配送费（超重费另计）') : S.store.notice)}</p><p>到店自提可用；园区配送边界待确认。</p>${deliveryTerms()}</section>` : ''}
  <div class="benefits"><span>${icon('leaf')}当季新鲜好物</span><span>${icon('shield')}品质用心挑选</span><span>${icon('truck')}门店配送 / 自提</span></div>
@@ -119,25 +122,34 @@ function cartView() {
     return `${head('购物车', `${items.length} 种好物 · 价格与库存以门店为准`)}<div class="shipping-hint">${icon('truck')}${remaining ? '商品还差 ¥' + money(remaining) + ' 达到免基础配送费门槛' : '商品金额已达免基础配送费门槛'}<span class="muted">（优惠后计算${S.store.delivery_rules ? "，超重费另计" : ""}）</span></div><div class="cart-layout"><div class="stack">${items.map(i => `<article class="cart-item ${i.valid ? '' : 'invalid'}"><input class="check" type="checkbox" data-change="cart-select" data-id="${i.id}" aria-label="选择${e(i.name)}" ${i.selected ? 'checked' : ''} ${!i.valid ? 'disabled' : ''}>${image(i.image, '', i.name)}<div class="grow"><h3>${e(i.name)}</h3><p class="muted">${e(i.unit)}${!i.valid ? ' · 库存不足或已下架' : ''}</p>${fulfillmentBadge(i)}<div class="row spread" style="margin-top:9px">${amount(i.price_cents)}<div class="stepper"><button data-action="cart-minus" data-id="${i.id}" aria-label="减少${e(i.name)}">−</button><output>${i.quantity}</output><button data-action="cart-plus" data-id="${i.id}" aria-label="增加${e(i.name)}" ${i.quantity >= i.available ? 'disabled' : ''}>+</button></div></div><button class="cart-remove" data-action="cart-remove" data-id="${i.id}">移除</button></div></article>`).join('')}</div><section class="card bill"><h3>这一单，刚刚好</h3><div class="bill-line"><span>已选好物</span><b>${valid.reduce((n, i) => n + i.quantity, 0)} 件</b></div><div class="bill-line"><span>商品合计</span><b>¥${money(S.cart.subtotal_cents)}</b></div><div class="bill-line"><span>优惠券 / 配送费</span><span>结算时确认</span></div><div class="bill-total"><b>商品金额</b>${amount(S.cart.subtotal_cents)}</div>${button('去结算 ' + icon('arrow'), 'checkout', 'primary', !valid.length ? 'disabled' : '')}<p class="footnote">未付款订单保留15分钟<br>实验室不会产生真实扣款</p></section></div>`;
 }
 async function checkoutView() {
+    const quoteRender = S.sequence;
+    const pending = readPendingOrder();
+    if (pending) return head('确认上次订单')+'<section class="card"><h3>上次提交结果尚未确认</h3><p>可能已经下单成功。请确认原订单，避免重复下单。</p>'+button('确认原订单','resume-order','primary')+'<a class="button outline" href="#/orders">查看我的订单</a></section>';
+    if(!S.checkoutPreferencesLoaded){const saved=JSON.parse(sessionStorage.getItem('jm-preferences:'+S.user.id)||'{}');S.method=saved.method||S.method;S.addressId=saved.addressId??S.addressId;S.addressChosen=!!saved.addressChosen;S.couponId=saved.couponId??S.couponId;S.checkoutPreferencesLoaded=true;}
     if (!S.checkout?.length)
         return `${head('确认订单')}${empty('还没有选择商品', '先把想买的东西加入购物车。', '<a class="button primary" href="#/cart">回购物车</a>')}`;
     const [addresses, coupons] = await Promise.all([api('/addresses'), api('/coupons')]);
-    if (!S.addressId && addresses.length)
-        S.addressId = addresses[0].id;
+    if (S.addressId && !addresses.some(a => a.id === S.addressId)) S.addressId = null;
+    if (S.addressId === null && !S.addressChosen && addresses.length) S.addressId = addresses[0].id;
     const data = { store_id: 1, items: S.checkout, method: S.method, address_id: S.method === 'delivery' ? S.addressId : null, coupon_id: S.couponId };
     try {
-        S.quote = await api('/quotes', 'POST', data);
+        if (S.method === 'delivery' && !S.addressId) throw new Error('请先添加或选择收货地址，再确认配送费用');
+        const incomingQuote = await api('/quotes', 'POST', data);
+        if(quoteRender !== S.sequence) return '';
+        S.quote = incomingQuote;
         S.quoteError = '';
     }
     catch (error) {
+        if(quoteRender !== S.sequence) return '';
         S.quote = null;
         S.quoteError = error.message;
     }
+    if(quoteRender !== S.sequence) return '';
     S.viewData = { addresses, coupons };
     S.checkoutKey = uniqueKey('checkout');
     const lines = S.quote?.items || S.checkout.map(i => { const p = S.products.find(p => p.id === i.sku_id); return { ...p, sku_id: i.sku_id, quantity: i.quantity, name: p?.name || '商品', price_cents: p?.price_cents || 0, image: p?.image || 'daily' }; });
     const q = S.quote;
-    return `${head('确认订单', '最后确认一下，新鲜马上出发。')}<div class="checkout-layout"><div class="stack"><section class="card"><h3 style="margin-bottom:18px">怎么把新鲜带回家</h3>${deliveryTerms()}<div class="method-switch"><button data-action="method" data-method="pickup" class="${S.method === 'pickup' ? 'selected' : ''}">${icon('store')} 到店自提<small>不收配送费 · 凭核销码取货</small></button><button data-action="method" data-method="delivery" class="${S.method === 'delivery' ? 'selected' : ''}">${icon('truck')} 门店配送<small>${S.store.local_preview ? '园区边界待确认' : S.store.radius_km + 'km 演练范围'} · 满${money(S.store.minimum_cents)}起送</small></button></div>${S.method === 'pickup' ? `<div class="address-card"><b>${icon('pin')} ${e(S.store.name)}</b><p>${S.store.local_preview ? e(S.store.address) : '示例门店地址（虚构）'}，下单后等待店员完成打包。</p></div>` : `<div class="field"><label for="checkout-address">收货地址</label><select id="checkout-address" data-change="address-select"><option value="">请选择收货地址</option>${addresses.map(a => `<option value="${a.id}" ${S.addressId === a.id ? 'selected' : ''}>${e(a.name)} · ${e(a.address)}</option>`).join('')}</select></div>${button('管理 / 新增地址', 'address-new', 'outline sm')}<p class="footnote" style="margin-top:10px">配送范围由服务端根据地址坐标计算，不能由客户端伪造。</p>`}</section><section class="card"><h3>选好的商品</h3>${lines.map(i => `<div class="order-line">${image(i.image, '', i.name)}<div class="grow"><h3>${e(i.name)}</h3><p>${e(i.unit)} · ×${i.quantity}</p>${fulfillmentBadge(i)}</div>${amount(i.price_cents * i.quantity)}</div>`).join('')}</section></div><section class="card bill"><h3>订单明细</h3><div class="field"><label for="coupon-select">选择优惠券（每单限1张，不叠加）</label><select id="coupon-select" data-change="coupon-select"><option value="">不使用优惠券</option>${coupons.filter(c => c.state === 'available' && !c.expired).map(c => `<option value="${c.id}" ${S.couponId === c.id ? 'selected' : ''}>${e(c.title)}</option>`).join('')}</select></div>${S.quoteError ? `<div class="alert error" role="alert">${e(S.quoteError)}</div>` : ''}<div class="bill-line"><span>商品金额</span><b>${q ? '¥' + money(q.subtotal_cents) : '—'}</b></div><div class="bill-line"><span>优惠券抵扣</span><b class="orange">${q ? '- ¥' + money(q.discount_cents) : '—'}</b></div>${q ? shippingBreakdown(q.shipping_detail, S.method) : ''}<div class="bill-line"><span>配送费合计</span><b>${q ? '¥' + money(q.shipping_cents) : '—'}</b></div><div class="bill-total"><b>应付合计</b>${q ? amount(q.total_cents) : '—'}</div>${button('提交订单', 'place-order', 'primary', !q ? 'disabled' : '')}<p class="footnote">服务端实时报价 · 有效期2分钟<br>提交后再模拟付款，不会真实扣款</p></section></div>`;
+    return `${head('确认订单', '最后确认一下，新鲜马上出发。')}<div class="checkout-layout"><div class="stack"><section class="card"><h3 style="margin-bottom:18px">怎么把新鲜带回家</h3>${deliveryTerms()}<div class="method-switch"><button data-action="method" data-method="pickup" class="${S.method === 'pickup' ? 'selected' : ''}">${icon('store')} 到店自提<small>不收配送费 · 凭核销码取货</small></button><button data-action="method" data-method="delivery" class="${S.method === 'delivery' ? 'selected' : ''}">${icon('truck')} 门店配送<small>${S.store.local_preview ? '园区边界待确认' : S.store.radius_km + 'km 演练范围'} · 满${money(S.store.minimum_cents)}起送</small></button></div>${S.method === 'pickup' ? `<div class="address-card"><b>${icon('pin')} ${e(S.store.name)}</b><p>${S.store.local_preview ? e(S.store.address) : '示例门店地址（虚构）'}，下单后等待店员完成打包。</p></div>` : `<div class="field"><label for="checkout-address">收货地址</label><select id="checkout-address" data-change="address-select"><option value="">请选择收货地址</option>${addresses.map(a => `<option value="${a.id}" ${S.addressId === a.id ? 'selected' : ''}>${e(a.name)} · ${e(a.address)}</option>`).join('')}</select></div>${addresses.find(a=>a.id===S.addressId) ? `<div class="address-card"><b>${e(addresses.find(a=>a.id===S.addressId).name)} · ${e(phoneEncryption(addresses.find(a=>a.id===S.addressId).mobile))}</b><p>${e(addresses.find(a=>a.id===S.addressId).address)}</p><small>请核对楼栋、楼层和门牌号</small></div>` : ''}${button('新增地址', 'address-new', 'outline sm')}${S.addressId ? button('编辑当前地址', 'address-edit', 'outline sm',`data-id="${S.addressId}"`) : ''}<p class="footnote" style="margin-top:10px">体验版按示例坐标判断配送范围；填写的地址文字不会自动定位。正式地址需接入地图核验。</p>`}</section><section class="card"><h3>选好的商品</h3>${lines.map(i => `<div class="order-line">${image(i.image, '', i.name)}<div class="grow"><h3>${e(i.name)}</h3><p>${e(i.unit)} · ×${i.quantity}</p>${fulfillmentBadge(i)}</div>${amount(i.price_cents * i.quantity)}</div>`).join('')}</section></div><section class="card bill"><h3>订单明细</h3><div class="field"><label for="coupon-select">选择优惠券（每单限1张，不叠加）</label><select id="coupon-select" data-change="coupon-select"><option value="">不使用优惠券</option>${coupons.filter(c => c.state === 'available' && !c.expired).map(c => `<option value="${c.id}" ${S.couponId === c.id ? 'selected' : ''}>${e(c.title)}</option>`).join('')}</select></div>${S.quoteError ? `<div class="alert error" role="alert">${e(S.quoteError)}</div>` : ''}<div class="bill-line"><span>商品金额</span><b>${q ? '¥' + money(q.subtotal_cents) : '—'}</b></div><div class="bill-line"><span>优惠券抵扣</span><b class="orange">${q ? '- ¥' + money(q.discount_cents) : '—'}</b></div>${q ? shippingBreakdown(q.shipping_detail, S.method) : ''}<div class="bill-line"><span>配送费合计</span><b>${q ? '¥' + money(q.shipping_cents) : '—'}</b></div><div class="bill-total"><b>应付合计</b>${q ? amount(q.total_cents) : '—'}</div><div class="checkout-paybar"><div><small>应付合计</small><strong>${q?'¥'+money(q.total_cents):'待确认'}</strong></div>${button('提交订单', 'place-order', 'primary', !q ? 'disabled' : '')}</div><p class="footnote">服务端实时报价 · 有效期2分钟<br>提交后再模拟付款，不会真实扣款</p></section></div>`;
 }
 const statusPill = o => `<span class="pill ${['pending_payment', 'refund_pending'].includes(o.state) ? 'amber' : ['cancelled', 'refunded'].includes(o.state) ? 'red' : ''}">${e(states[o.state] || o.state)}</span>`;
 function orderCard(o) { return `<section class="card order-card"><div class="order-card-head"><div><b>${o.method === 'pickup' ? '到店自提' : '门店配送'}</b> <span class="order-id">${e(o.number)}</span></div>${statusPill(o)}</div><a href="#/order?id=${e(o.id)}"><div class="order-thumbs">${o.items.slice(0, 5).map(i => image(i.image, '', i.name)).join('')}<span class="muted">共${o.items.reduce((n, i) => n + i.quantity, 0)}件</span></div><p class="muted" style="font-size:11px">${o.items.map(i => e(i.name)).join('、')} · ${timeLabel(o.created)}</p></a><div class="order-card-foot"><div><small class="muted">${o.paid_cents ? '实付' : '应付'} </small>${amount(o.total_cents)}${o.refunded_cents ? `<small class="orange"> 已退 ¥${money(o.refunded_cents)}</small>` : ''}</div><a class="button ${o.state === 'pending_payment' && isCustomer() ? 'buy' : 'secondary'} sm" href="#/order?id=${e(o.id)}">${o.state === 'pending_payment' && isCustomer() ? '去付款' : isCustomer() ? '查看订单' : '处理订单'} ${icon('arrow')}</a></div></section>`; }
@@ -175,23 +187,23 @@ async function orderView(q) {
             actions += button('取消并退款', 'cancel-order', 'danger', `data-id="${o.id}"`);
     }
     const track = o.delivery ? ['created', 'accepted', 'picked_up', 'delivered'].indexOf(o.delivery.state) : -1;
-    return `<a href="#/orders" class="breadcrumb">${icon('back')}返回订单列表</a><section class="order-status-hero"><div class="status-icon">${icon(o.state === 'completed' ? 'check' : o.state === 'delivering' ? 'truck' : 'bag')}</div><div class="grow"><h2>${e(states[o.state])}</h2><p>${subtitle}</p></div>${button(icon('refresh'), 'refresh', 'outline sm', 'aria-label="刷新订单"')}</section><div class="checkout-layout"><div class="stack"><section class="card"><div class="row spread"><h3>${o.method === 'pickup' ? '到店自提' : '门店配送'}</h3><span class="order-id">${e(o.number)}</span></div>${o.method === 'delivery' ? `<div class="address-card"><b>${e(o.address.name)}　${e(phoneEncryption(o.address.mobile || ''))}</b><p>${e(o.address.address)}</p></div>` : ''}${o.method === 'pickup' && isCustomer() && ['ready', 'completed'].includes(o.state) ? `<div class="address-card"><small class="muted">自提核销码 · 请向店员出示</small><div class="pickup-code">${o.pickup_code}</div><small class="muted">${o.state === 'completed' ? '该订单已核销' : '门店核验后，订单才会完成'}</small></div>` : ''}${o.items.map(l => `<div class="order-line">${image(l.image, '', l.name)}<div class="grow"><h3>${e(l.name)}</h3><p>${e(l.unit)} · ×${l.quantity}${l.shortage_qty ? ' · 缺货' + l.shortage_qty + '件' : ''}${!isCustomer() ? ' · 已拣' + l.picked_qty + '件' : ''}</p>${!isCustomer() && o.state === 'picking' ? `<div class="row wrap" style="margin-top:8px">${button('已拣齐', 'pick-line', 'secondary sm', `data-line="${l.id}" ${l.picked_qty + l.shortage_qty >= l.quantity ? 'disabled' : ''}`)}${button('缺1件退款', 'shortage', 'danger sm', `data-line="${l.id}" ${l.picked_qty + l.shortage_qty >= l.quantity ? 'disabled' : ''}`)}</div>` : ''}</div><div>${amount(l.net_cents)}${l.discount_cents ? `<p class="muted">已减 ¥${money(l.discount_cents)}</p>` : ''}</div></div>`).join('')}${shippingBreakdown(o.shipping_detail, o.method)}<div class="bill-line"><span>配送费合计</span><b>¥${money(o.shipping_cents)}</b></div><div class="bill-total"><b>应付合计</b>${amount(o.total_cents)}</div>${o.refunded_cents ? `<div class="bill-line"><span>已退款</span><b class="orange">¥${money(o.refunded_cents)}</b></div>` : ''}${actions ? `<div class="order-actions row wrap" style="margin-top:23px">${actions}</div>` : ''}</section>${o.delivery ? `<section class="card"><h3>${icon('truck')} 配送进度</h3><p class="subtitle">${e(o.delivery.courier)} · 模拟配送服务</p><div class="delivery-track">${['已呼叫', '已接单', '已取货', '已送达'].map((v, n) => `<div class="track-step ${n <= track ? 'done' : ''}">${icon(n === 3 ? 'check' : 'truck')}${v}</div>`).join('')}</div>${!isCustomer() && isManager() && track >= 0 && track < 3 ? button('推进模拟骑手：' + ['接单', '取货', '送达'][track], 'advance-delivery', 'secondary', `data-id="${o.delivery.id}" data-state="${['accepted', 'picked_up', 'delivered'][track]}"`) : ''}<p class="footnote">由模拟骑手事件驱动，不是实时 GPS 地图。</p></section>` : ''}${o.refunds.length ? `<section class="card"><h3>退款与售后</h3>${o.refunds.map(r => `<div class="job"><div class="row spread"><b>¥${money(r.amount_cents)}</b><span class="pill ${r.state === 'failed' ? 'red' : ''}">${e({ requested: '等待店长审核', pending: '退款处理中', failed: '退款失败 · 可重试', succeeded: '模拟退款到账', rejected: '申请未通过' }[r.state])}</span></div><small>${e(r.reason)}</small>${r.state === 'requested' && isManager() ? `<div class="row" style="margin-top:10px">${button('同意退款', 'approve-refund', 'primary sm', `data-id="${r.id}"`)}${button('拒绝申请', 'reject-refund', 'outline sm', `data-id="${r.id}"`)}</div>` : ''}</div>`).join('')}</section>` : ''}</div><section class="card"><h3>这一单的每一步</h3><p class="footnote">来自数据库的真实状态记录</p><div class="timeline">${o.timeline.map(t => `<div class="timeline-item">${e(events[t.action] || t.action)}<small>${timeLabel(t.created)}</small></div>`).join('')}</div><div class="footnote">订单编号 ${e(o.number)}<br>支付与退款仅在本地模拟账本中流转。</div></section></div>`;
+    return `<a href="#/orders" class="breadcrumb">${icon('back')}返回订单列表</a><section class="order-status-hero"><div class="status-icon">${icon(o.state === 'completed' ? 'check' : o.state === 'delivering' ? 'truck' : 'bag')}</div><div class="grow"><h2>${e(states[o.state])}</h2><p>${subtitle}</p>${isCustomer()&&o.state==='pending_payment'?`<div class="order-actions row wrap">${actions}</div>`:''}</div>${button(icon('refresh'), 'refresh', 'outline sm', 'aria-label="刷新订单"')}</section><div class="checkout-layout"><div class="stack"><section class="card"><div class="row spread"><h3>${o.method === 'pickup' ? '到店自提' : '门店配送'}</h3><span class="order-id">${e(o.number)}</span></div>${o.method === 'delivery' ? `<div class="address-card"><b>${e(o.address.name)}　${e(phoneEncryption(o.address.mobile || ''))}</b><p>${e(o.address.address)}</p></div>` : ''}${o.method === 'pickup' && isCustomer() && ['ready', 'completed'].includes(o.state) ? `<div class="address-card"><small class="muted">自提核销码 · 请向店员出示</small><div class="pickup-code">${o.pickup_code}</div><small class="muted">${o.state === 'completed' ? '该订单已核销' : '门店核验后，订单才会完成'}</small></div>` : ''}${o.items.map(l => `<div class="order-line">${image(l.image, '', l.name)}<div class="grow"><h3>${e(l.name)}</h3><p>${e(l.unit)} · ×${l.quantity}${l.shortage_qty ? ' · 缺货' + l.shortage_qty + '件' : ''}${!isCustomer() ? ' · 已拣' + l.picked_qty + '件' : ''}</p>${!isCustomer() && o.state === 'picking' ? `<div class="row wrap" style="margin-top:8px">${button('已拣齐', 'pick-line', 'secondary sm', `data-line="${l.id}" ${l.picked_qty + l.shortage_qty >= l.quantity ? 'disabled' : ''}`)}${button('缺1件退款', 'shortage', 'danger sm', `data-line="${l.id}" ${l.picked_qty + l.shortage_qty >= l.quantity ? 'disabled' : ''}`)}</div>` : ''}</div><div>${amount(l.net_cents)}${l.discount_cents ? `<p class="muted">已减 ¥${money(l.discount_cents)}</p>` : ''}</div></div>`).join('')}${shippingBreakdown(o.shipping_detail, o.method)}<div class="bill-line"><span>配送费合计</span><b>¥${money(o.shipping_cents)}</b></div><div class="bill-line"><span>商品金额</span><b>¥${money(o.subtotal_cents)}</b></div><div class="bill-line"><span>优惠抵扣</span><b>−¥${money(o.discount_cents)}</b></div><div class="bill-total"><b>应付合计</b>${amount(o.total_cents)}</div>${o.refunded_cents ? `<div class="bill-line"><span>已退款</span><b class="orange">¥${money(o.refunded_cents)}</b></div>` : ''}${actions && !(isCustomer() && o.state === 'pending_payment') ? `<div class="order-actions row wrap" style="margin-top:23px">${actions}</div>` : ''}</section>${o.delivery ? `<section class="card"><h3>${icon('truck')} 配送进度</h3><p class="subtitle">${e(o.delivery.courier)} · 模拟配送服务</p><div class="delivery-track">${['已呼叫', '已接单', '已取货', '已送达'].map((v, n) => `<div class="track-step ${n <= track ? 'done' : ''}">${icon(n === 3 ? 'check' : 'truck')}${v}</div>`).join('')}</div>${!isCustomer() && isManager() && track >= 0 && track < 3 ? button('推进模拟骑手：' + ['接单', '取货', '送达'][track], 'advance-delivery', 'secondary', `data-id="${o.delivery.id}" data-state="${['accepted', 'picked_up', 'delivered'][track]}"`) : ''}<p class="footnote">由模拟骑手事件驱动，不是实时 GPS 地图。</p></section>` : ''}${o.refunds.length ? `<section class="card"><h3>退款与售后</h3>${o.refunds.map(r => `<div class="job"><div class="row spread"><b>¥${money(r.amount_cents)}</b><span class="pill ${r.state === 'failed' ? 'red' : ''}">${e({ requested: '等待店长审核', pending: '退款处理中', failed: '退款失败 · 可重试', succeeded: '模拟退款到账', rejected: '申请未通过' }[r.state])}</span></div><small>${e(r.reason)}</small>${r.state === 'requested' && isManager() ? `<div class="row" style="margin-top:10px">${button('同意退款', 'approve-refund', 'primary sm', `data-id="${r.id}"`)}${button('拒绝申请', 'reject-refund', 'outline sm', `data-id="${r.id}"`)}</div>` : ''}</div>`).join('')}</section>` : ''}</div><section class="card"><h3>这一单的每一步</h3><p class="footnote">来自数据库的真实状态记录</p><div class="timeline">${o.timeline.map(t => `<div class="timeline-item">${e(events[t.action] || t.action)}<small>${timeLabel(t.created)}</small></div>`).join('')}</div><div class="footnote">订单编号 ${e(o.number)}<br>支付与退款仅在本地模拟账本中流转。</div></section></div>`;
 }
 async function dashboard() {
     const d = await api('/admin/dashboard');
     S.viewData = d;
-    const list = [['累计订单', d.order_count, 'file', '本地数据库订单数'], ['模拟净收款', '¥' + money(d.net_cents), 'wallet', '付款减已完成退款'], ['待接单', d.waiting, 'clock', '已付款，等待门店确认'], ['低库存商品', d.low_stock, 'bag', '可售库存低于10份']];
+    const list = [['累计订单', d.order_count, 'file', '查看全部订单', '#/orders'], ['模拟净收款', '¥' + money(d.net_cents), 'wallet', '查看收款与退款明细', isOperator() ? '#/lab' : '#/orders'], ['待接单', d.waiting, 'clock', '处理待接单订单', '#/orders?status=paid'], ['低库存商品', d.low_stock, 'bag', '查看可售库存低于10份的商品', isManager() ? '#/inventory?stock=low' : null]];
     const chart = [['待接单', 'paid'], ['拣货中', 'picking'], ['待取货', 'ready'], ['已完成', 'completed']];
     const max = Math.max(1, ...chart.map(([l, k]) => d.states[k]));
     const actions = [['orders', 'file', '订单管理', '接单 · 拣货 · 售后'], ['inventory', 'box', '商品库存', '价格 · 入库 · 盘点'], ['marketing', 'ticket', '会员营销', '发券 · 分类 · 会员'], ['settings', 'store', '门店设置', '范围 · 营业 · 运费'], ['receipts', 'print', '打印记录', '小票 · 失败重试'], ['lab', 'code', '联调实验室', '故障注入 · 数据对账']];
     return `${head('门店经营，一目了然。', `${e(S.store.name)} · 欢迎回来，${e(S.user.name)}。`, button(icon('refresh') + '刷新数据', 'refresh', 'outline'), 'STORE / OPERATIONS')}` +
-        `<div class="stats-grid">${list.map(([l, v, i, n]) => `<section class="stat-card">${icon(i)}<p>${l}</p><b>${v}</b><small>${n}</small></section>`).join('')}</div><div class="dashboard-grid"><section class="card"><div class="row spread"><h3>门店工作台</h3><span class="pill">${S.store.open ? '营业中' : '已打烊'}</span></div><p class="subtitle">让好物及时送到，让每一笔账都清楚。</p><div class="actions-grid">${actions.filter(a => isManager() || a[0] === 'orders').map(([p, i, l, n]) => `<button class="quick-action" data-action="quick" data-page="${p}">${icon(i)}${l}<small>${n}</small></button>`).join('')}</div></section><section class="card"><h3>订单状态分布</h3><p class="subtitle">待接单、拣货、待取货与已完成订单，不含取消和退款。</p><div class="bar-chart">${chart.map(([l, k]) => `<div class="bar-column">${d.states[k]}<i style="height:${Math.max(2, Math.round(d.states[k] / max * 120))}px"></i></div>`).join('')}</div><div class="bar-labels">${chart.map(([l]) => `<span>${l}</span>`).join('')}</div></section><section class="card"><div class="row spread"><h3>最近业务动态</h3><span class="muted">实时审计</span></div>${d.recent.length ? d.recent.slice(0, 7).map(a => `<div class="activity-row"><div class="circle">${icon('check')}</div><div class="grow"><b>${e(events[a.action] || a.action)}</b><small>${e(a.entity)}</small></div><small>${timeLabel(a.created)}</small></div>`).join('') : '<p class="subtitle" style="padding:25px 0">下一笔订单，就从现在开始。</p>'}</section><section class="card"><div class="eyebrow">LABORATORY / LIVE DATA</div><h3>把复杂留给系统，<br>把新鲜留给顾客。</h3><p class="subtitle" style="line-height:2;margin:14px 0 22px">每笔订单都经过服务端核价，<br>每次库存变动都有流水，<br>每次支付回调都验证签名。</p>${button('进入顾客端下一单 ' + icon('arrow'), 'shop', 'secondary')}<p class="footnote" style="margin-top:18px">此处展示的是本地演练数据，不代表真实门店经营业绩。</p></section></div>`;
+        `<div class="stats-grid">${list.map(([l, v, i, n, href]) => href ? `<a class="stat-card stat-link" href="${href}" aria-label="${l}，${n}">${icon(i)}<p>${l} ›</p><b>${v}</b><small>${n}</small></a>` : `<section class="stat-card">${icon(i)}<p>${l}</p><b>${v}</b><small>${n}</small></section>`).join('')}</div><div class="dashboard-grid"><section class="card"><div class="row spread"><h3>门店工作台</h3><span class="pill">${S.store.open ? '营业中' : '已打烊'}</span></div><p class="subtitle">让好物及时送到，让每一笔账都清楚。</p><div class="actions-grid">${actions.filter(a => isManager() || a[0] === 'orders').map(([p, i, l, n]) => `<button class="quick-action" data-action="quick" data-page="${p}">${icon(i)}${l}<small>${n}</small></button>`).join('')}</div></section><section class="card"><h3>订单状态分布</h3><p class="subtitle">待接单、拣货、待取货与已完成订单，不含取消和退款。</p><div class="bar-chart">${chart.map(([l, k]) => `<a class="bar-column" href="#/orders?status=${k}" aria-label="查看${l}订单">${d.states[k]}<i style="height:${Math.max(2, Math.round(d.states[k] / max * 120))}px"></i></a>`).join('')}</div><div class="bar-labels">${chart.map(([l,k]) => `<a href="#/orders?status=${k}">${l}</a>`).join('')}</div></section><section class="card"><div class="row spread"><h3>最近业务动态</h3><span class="muted">实时审计</span></div>${d.recent.length ? d.recent.slice(0, 7).map(a => `<div class="activity-row"><div class="circle">${icon('check')}</div><div class="grow"><b>${e(events[a.action] || a.action)}</b><small>${e(a.entity)}</small></div><small>${timeLabel(a.created)}</small></div>`).join('') : '<p class="subtitle" style="padding:25px 0">下一笔订单，就从现在开始。</p>'}</section><section class="card"><div class="eyebrow">LABORATORY / LIVE DATA</div><h3>把复杂留给系统，<br>把新鲜留给顾客。</h3><p class="subtitle" style="line-height:2;margin:14px 0 22px">每笔订单都经过服务端核价，<br>每次库存变动都有流水，<br>每次支付回调都验证签名。</p>${button('进入顾客端下一单 ' + icon('arrow'), 'shop', 'secondary')}<p class="footnote" style="margin-top:18px">此处展示的是本地演练数据，不代表真实门店经营业绩。</p></section></div>`;
 }
 async function inventory(q) {
     const keyword = q.get('q') || '';
-    const products = S.products.filter(p => !keyword || p.name.includes(keyword) || p.barcode === keyword);
+    const products = S.products.filter(p => (!keyword || p.name.includes(keyword) || p.barcode === keyword) && (q.get('stock') !== 'low' || p.available < 10));
     S.viewData = products;
-    return `${head('商品与库存', '商品售价、可售库存和库存流水，统一管理。', button(icon('plus') + '新增商品', 'product-new', 'primary'), 'STORE / INVENTORY')}<div class="toolbar">${searchForm(keyword, 'inventory')}${button('库存流水', 'stock-ledger', 'outline')}${S.store.local_preview ? button('导入核对', 'import-review', 'outline') : ''}</div><div class="table-wrap"><table><thead><tr><th>商品 / 规格</th><th>售价</th><th>账面库存</th><th>预占</th><th>可售</th><th>状态</th><th>操作</th></tr></thead><tbody>${products.map(p => `<tr data-sku="${p.id}"><td>${image(p.image, '', p.name)}<b>${e(p.name)}</b><div class="footnote">${e(p.unit)} · ${e(p.barcode)}</div>${fulfillmentBadge(p)}<div class="footnote">配送重量：${p.weight_g == null ? '未确认' : p.weight_g + '克 / ' + e(p.unit)}</div></td><td>¥${money(p.price_cents)}</td><td>${p.on_hand}</td><td>${p.reserved}</td><td class="${p.available < 10 ? 'stock-low' : ''}">${p.available}</td><td><span class="pill ${p.active ? '' : 'red'}">${p.active ? '上架中' : '已下架'}</span></td><td><div class="inventory-actions">${button('库存', 'stock-edit', 'secondary sm', `data-id="${p.id}"`)}${button('改价', 'price-edit', 'outline sm', `data-id="${p.id}"`)}${button('配送资料', 'fulfillment-edit', 'outline sm', `data-id="${p.id}"`)}${button(p.active ? '下架' : '上架', 'toggle-product', 'outline sm', `data-id="${p.id}"`)}</div></td></tr>`).join('')}</tbody></table></div><div class="alert">库存含义：账面数量 − 未付款订单预占 = 可售数量。线下销售通过模拟 POS 事件入账；不能直接覆盖库存数。</div>`;
+    return `${head(q.get('stock') === 'low' ? '低库存商品（可售低于10份）' : '商品与库存', '商品售价、可售库存和库存流水，统一管理。', button(icon('plus') + '新增商品', 'product-new', 'primary'), 'STORE / INVENTORY')}<div class="toolbar">${searchForm(keyword, 'inventory')}${button('库存流水', 'stock-ledger', 'outline')}${S.store.local_preview ? button('导入核对', 'import-review', 'outline') : ''}</div><div class="table-wrap"><table><thead><tr><th>商品 / 规格</th><th>售价</th><th>账面库存</th><th>预占</th><th>可售</th><th>状态</th><th>操作</th></tr></thead><tbody>${products.map(p => `<tr data-sku="${p.id}"><td>${image(p.image, '', p.name)}<b>${e(p.name)}</b><div class="footnote">${e(p.unit)} · ${e(p.barcode)}</div>${fulfillmentBadge(p)}<div class="footnote">配送重量：${p.weight_g == null ? '未确认' : p.weight_g + '克 / ' + e(p.unit)}</div></td><td>¥${money(p.price_cents)}</td><td>${p.on_hand}</td><td>${p.reserved}</td><td class="${p.available < 10 ? 'stock-low' : ''}">${p.available}</td><td><span class="pill ${p.active ? '' : 'red'}">${p.active ? '上架中' : '已下架'}</span></td><td><div class="inventory-actions">${button('库存', 'stock-edit', 'secondary sm', `data-id="${p.id}"`)}${button('改价', 'price-edit', 'outline sm', `data-id="${p.id}"`)}${button('配送资料', 'fulfillment-edit', 'outline sm', `data-id="${p.id}"`)}${button(p.active ? '下架' : '上架', 'toggle-product', 'outline sm', `data-id="${p.id}"`)}</div></td></tr>`).join('')}</tbody></table></div><div class="alert">库存含义：账面数量 − 未付款订单预占 = 可售数量。线下销售通过模拟 POS 事件入账；不能直接覆盖库存数。</div>`;
 }
 async function settings() {
     // A separate form avoids silently confirming provisional merchant terms.
@@ -259,6 +271,7 @@ async function render() {
                 content = cartView();
                 break;
             case 'checkout':
+            closeModal();
                 content = await checkoutView();
                 break;
             case 'orders':
@@ -307,6 +320,8 @@ async function render() {
         }
         if (seq === S.sequence) {
             root.innerHTML = shell(content, page);
+            document.body.classList.toggle('has-shopping-dock',isCustomer()&&['home','categories','product','cart'].includes(page));
+            if(S.cartSheetOpen)showCartSheet();
             document.title = (isCustomer() ? '京漫便民 · 新鲜就在身边' : '京漫便民 · 门店工作台');
         }
     }
@@ -330,9 +345,9 @@ async function render() {
 }
 function renderLogin() { root.innerHTML = `<main class="login-wrap"><section class="login-card">${brand()}<div class="eyebrow">LOCAL INTEGRATION LAB / V0.2</div><h1>让这家超市，真正运转起来。</h1><p class="subtitle">订单、库存与账本会真实保存。<br>支付、配送与打印在安全的本地环境中模拟。</p><form data-form="login"><div class="field"><label for="access-key">实验室访问口令</label><input id="access-key" type="password" name="key" autocomplete="off" placeholder="粘贴启动终端显示的口令" required minlength="12" value="${e(S.key)}"></div><button class="button primary">进入京漫便民 ${icon('arrow')}</button></form><p class="footnote" style="margin-top:20px">运行 ./run.sh 后，使用终端给出的地址进入。<br>此程序只用于本地验收，不连接真实微信钱包。</p></section></main>`; }
 let lastFocus = null;
-function modal(title, body) { lastFocus = document.activeElement; overlay.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${e(title)}"><div class="modal-head"><h2>${title}</h2><button class="icon-button" data-action="close" aria-label="关闭弹窗">${icon('close')}</button></div>${body}</section></div>`; overlay.querySelector('input,select,textarea,button')?.focus(); }
-function closeModal() { overlay.innerHTML = ''; lastFocus?.focus?.(); }
-function addressModal(a = {}) { modal(a.id ? '编辑收货地址' : '新增收货地址', `<form data-form="address" data-id="${a.id || ''}"><div class="field-row"><div class="field"><label>收件人</label><input name="name" value="${e(a.name || '体验用户')}" required maxlength="30"></div><div class="field"><label>手机号（演练）</label><input name="mobile" value="${e(a.mobile || '18800000001')}" required pattern="1[0-9]{10}" inputmode="tel"></div></div><div class="field"><label>详细地址</label><input name="address" value="${e(a.address || '示例小区 2号楼201（虚构地址）')}" minlength="4" maxlength="160" required></div><div class="field-row"><div class="field"><label>地址纬度</label><input name="latitude" type="number" step="any" min="-90" max="90" value="${a.latitude ?? 31.234}" required></div><div class="field"><label>地址经度</label><input name="longitude" type="number" step="any" min="-180" max="180" value="${a.longitude ?? 121.48}" required></div></div><p class="footnote">预填地址是演练样例。改为32.23纬度可测试超配送范围；未授权定位也能手动填写。</p><div class="row wrap" style="margin-top:18px"><button class="button primary">保存地址</button><button class="button outline" type="button" data-action="locate">尝试定位</button></div></form>`); }
+function modal(title, body) { document.body.classList.add('modal-open'); lastFocus = document.activeElement; overlay.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${e(title)}"><div class="modal-head"><h2>${title}</h2><button class="icon-button" data-action="close" aria-label="关闭弹窗">${icon('close')}</button></div>${body}</section></div>`; overlay.querySelector('input,select,textarea,button')?.focus(); }
+function closeModal() { S.cartSheetOpen = false; document.body.classList.remove('modal-open'); overlay.innerHTML = ''; lastFocus?.focus?.(); }
+function addressModal(a = {}) { modal(a.id ? '编辑收货地址' : '新增收货地址', `<form data-form="address" data-id="${a.id || ''}"><div class="field-row"><div class="field"><label>收件人</label><input name="name" value="${e(a.name || '')}" required maxlength="30"></div><div class="field"><label>手机号（演练）</label><input name="mobile" value="${e(a.mobile || '')}" required pattern="1[0-9]{10}" inputmode="tel"></div></div><div class="field"><label>详细地址</label><input name="address" value="${e(a.address || '')}" minlength="4" maxlength="160" required></div><details class="test-coordinate"><summary>配送测试位置：示例门店附近（可展开修改）</summary><div class="field-row"><div class="field"><label>地址纬度</label><input name="latitude" type="number" step="any" min="-90" max="90" value="${a.latitude ?? 31.234}" required></div><div class="field"><label>地址经度</label><input name="longitude" type="number" step="any" min="-180" max="180" value="${a.longitude ?? 121.48}" required></div></div><p class="footnote">坐标仅用于测试范围，不是上方地址的真实位置。改为32.23纬度可测试超配送范围。</p></details><div class="row wrap" style="margin-top:18px"><button class="button primary">保存地址</button><button class="button outline" type="button" data-action="locate">尝试定位</button></div></form>`); }
 async function safe(action, buttonElement) {
     if (buttonElement?.disabled)
         return;
@@ -357,6 +372,10 @@ async function persona(name, page) { if (!S.key) {
 } await login(name); closeModal(); go(page || (name.startsWith('customer') ? 'home' : name === 'rider' ? 'rider' : 'dashboard')); }
 async function perform(action, el) {
     const id = el?.dataset.id, oid = S.viewData?.id;
+    if(action==='resume-order'){await submitShoppingOrder(readPendingOrder());return;}
+    if(action==='cart-sheet'){S.cartSheetOpen=true;showCartSheet();return;}
+    if(action==='guide-dismiss'){localStorage.setItem('jm-shopping-guide','seen');await render();return;}
+    if(action==='cart-minus'||action==='cart-plus'||action==='cart-remove'||action==='add'){return mutateCart(action,el);}
     switch (action) {
         case 'delivery-rules-edit': {
             const r = S.store.delivery_rules;
@@ -389,14 +408,6 @@ async function perform(action, el) {
         case 'lab':
             await persona('manager', 'lab');
             return;
-        case 'add': {
-            const quantity = Number(el.dataset.quantity || 1), cart = await api('/cart');
-            const old = cart.items.find(i => i.id === Number(id));
-            await api('/cart', 'PUT', { sku_id: Number(id), quantity: (old?.quantity || 0) + quantity });
-            await render();
-            toast('已加入购物车');
-            return;
-        }
         case 'variant':
             S.quantity = 1;
             go('product', { id });
@@ -411,7 +422,6 @@ async function perform(action, el) {
             return;
         case 'buy-now':
             S.checkout = [{ sku_id: Number(id), quantity: S.quantity }];
-            S.method = 'pickup';
             S.couponId = null;
             sessionStorage.setItem('jm-checkout', JSON.stringify(S.checkout));
             go('checkout');
@@ -421,14 +431,6 @@ async function perform(action, el) {
             await render();
             toast('收藏已更新');
             return;
-        case 'cart-plus':
-        case 'cart-minus':
-        case 'cart-remove': {
-            const item = S.cart.items.find(i => i.id === Number(id));
-            await api('/cart', 'PUT', { sku_id: item.id, quantity: action === 'cart-remove' ? 0 : item.quantity + (action === 'cart-plus' ? 1 : -1), selected: !!item.selected });
-            await render();
-            return;
-        }
         case 'checkout':
             S.checkout = S.cart.items.filter(i => i.selected && i.valid).map(i => ({ sku_id: i.id, quantity: i.quantity }));
             S.method = 'pickup';
@@ -438,16 +440,13 @@ async function perform(action, el) {
             return;
         case 'method':
             S.method = el.dataset.method;
+            saveCheckoutPreferences();
             await render();
             return;
         case 'place-order': {
-            if (!S.quote)
+            if (S.rendering || !S.quote)
                 return;
-            const o = await api('/orders', 'POST', { quote_id: S.quote.id }, S.checkoutKey);
-            S.checkout = null;
-            sessionStorage.removeItem('jm-checkout');
-            go('order', { id: o.id });
-            toast('订单已创建，商品已预留');
+            await submitShoppingOrder({quote_id:S.quote.id,key:S.checkoutKey});
             return;
         }
         case 'pay':
@@ -656,10 +655,13 @@ document.addEventListener('change', event => { const el = event.target; if (!el.
     }
     case 'coupon-select':
         S.couponId = Number(el.value) || null;
+        saveCheckoutPreferences();
         await render();
         break;
     case 'address-select':
         S.addressId = Number(el.value) || null;
+        S.addressChosen = true;
+        saveCheckoutPreferences();
         await render();
         break;
 } }); });
@@ -688,7 +690,8 @@ document.addEventListener('submit', event => {
                 break;
             case 'address': {
                 const body = { name: value('name'), mobile: value('mobile'), address: value('address'), latitude: Number(value('latitude')), longitude: Number(value('longitude')) };
-                await api('/addresses' + (form.dataset.id ? '/' + form.dataset.id : ''), form.dataset.id ? 'PUT' : 'POST', body);
+                const savedAddress = await api('/addresses' + (form.dataset.id ? '/' + form.dataset.id : ''), form.dataset.id ? 'PUT' : 'POST', body);
+                if(route().page === 'checkout'){ S.addressId=savedAddress.id; S.addressChosen=true; saveCheckoutPreferences(); }
                 closeModal();
                 await render();
                 toast('地址已保存');
@@ -768,7 +771,7 @@ document.addEventListener('keydown', event => { const dialog = overlay.querySele
         first.focus();
     }
 } });
-window.addEventListener('hashchange', () => render());
+window.addEventListener('hashchange', () => { closeModal(); render(); });
 (async () => { try {
     if (location.hash.startsWith('#access=')) {
         S.key = decodeURIComponent(location.hash.slice(8));
@@ -782,3 +785,39 @@ catch (error) {
     renderLogin();
     toast(error.message);
 } })();
+
+function readyPickups(orders){return orders.filter(o=>o.method==='pickup'&&o.state==='ready'&&o.pickup_code);}
+function pickupNotice(){const orders=S.pickupOrders||[];if(!orders.length)return '';return '<section class="pickup-notice" aria-label="自提取货提醒"><div class="row spread"><h2>自提已备好，请来取货</h2><span class="pill amber">待取货 '+orders.length+' 单</span></div><div class="pickup-notice-list">'+orders.map(o=>'<article class="pickup-notice-order"><small>订单 '+e(o.number)+'</small><div class="row spread"><div><p>向店员出示核销码</p><strong class="pickup-code-large">'+e(o.pickup_code)+'</strong></div><a class="button outline sm" href="#/order?id='+encodeURIComponent(o.id)+'">查看订单</a></div></article>').join('')+'</div><small>成功核销取货后，提醒会自动消失。</small>'+(S.pickupOffline?'<p role="status">连接中断，取货状态尚未更新，请刷新确认。</p>':'')+'</section>';}
+var pickupPolling=false;
+async function pollPickupNotice(){
+ if(pickupPolling||document.hidden||!S.token||!isCustomer()||route().page!=='home')return;
+ const token=S.token,sequence=S.sequence;pickupPolling=true;
+ try{const orders=await api('/orders');if(token!==S.token||sequence!==S.sequence||route().page!=='home')return;S.pickupOrders=readyPickups(orders);S.pickupOffline=false;}
+ catch(error){if(token!==S.token||sequence!==S.sequence)return;S.pickupOffline=true;}
+ finally{pickupPolling=false;}
+ const notice=document.querySelector('#pickup-notice');if(notice&&token===S.token){const html=pickupNotice();if(notice.innerHTML!==html)notice.innerHTML=html;}
+}
+setInterval(pollPickupNotice,5000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollPickupNotice();});
+window.addEventListener('focus',pollPickupNotice);
+
+function cartQuantityLabel(id){const item=S.cart.items.find(i=>i.id===id);return item?'<span class="in-cart">已加 '+item.quantity+' 件</span>':'';}
+function firstShoppingGuide(){return localStorage.getItem('jm-shopping-guide')?'':'<section class="shopping-guide"><div><b>第一次来？跟着这三步就好</b><p>挑商品 → 核对购物车 → 选自提或配送并下单</p><small>本次体验使用模拟付款，不会扣真钱。底部可随时查看已选清单。</small></div><button data-action="guide-dismiss" aria-label="收起购物指引">知道了</button></section>';}
+function shoppingDock(page){if(!isCustomer()||!['home','categories','product','cart'].includes(page))return '';const valid=S.cart.items.filter(i=>i.selected&&i.valid);return '<aside class="shopping-dock" aria-label="购物车摘要" aria-live="polite"><button class="shopping-summary" data-action="cart-sheet"><b>'+ (S.cart.count?'已加入 '+S.cart.count+' 件 · 查看清单 ↑':'购物车还空着 · 点击查看')+'</b><strong>¥'+money(S.cart.subtotal_cents)+'</strong><small>已勾选商品金额 · 优惠与运费结算时确认</small></button>'+button('去结算','checkout','primary',valid.length?'':'disabled')+'</aside>';}
+function showCartSheet(){const items=S.cart.items;modal('已选商品 · '+S.cart.count+' 件','<div class="cart-sheet-list">'+(items.length?items.map(i=>'<article class="sheet-line">'+image(i.image,'',i.name)+'<div class="grow"><b>'+e(i.name)+'</b><p>'+e(i.unit)+' · '+(i.selected?'已勾选':'未勾选')+(!i.valid?' · 库存不足/已下架':'')+'</p>'+amount(i.price_cents)+'</div><div class="stepper"><button data-action="cart-minus" data-id="'+i.id+'" aria-label="减少'+e(i.name)+'">−</button><output>'+i.quantity+'</output><button data-action="cart-plus" data-id="'+i.id+'" aria-label="增加'+e(i.name)+'" '+(!i.valid||i.quantity>=i.available?'disabled':'')+'>+</button></div></article>').join(''):empty('还没有选择商品','点击商品旁的 +，已选商品会出现在这里。',button('继续选购','close','primary')))+'</div><div class="sheet-footer"><span>已勾选商品合计 <b>¥'+money(S.cart.subtotal_cents)+'</b></span><a href="#/cart" data-action="close">去购物车勾选</a>'+button('去结算','checkout','primary',items.some(i=>i.selected&&i.valid)?'':'disabled')+'</div>');}
+var cartMutationQueue=Promise.resolve();
+function mutateCart(action,el){const id=Number(el.dataset.id),delta=action==='add'?Number(el.dataset.quantity||1):action==='cart-plus'?1:-1,token=S.token;const task=cartMutationQueue.catch(()=>{}).then(async()=>{if(token!==S.token)return;const cart=await api('/cart'),old=cart.items.find(i=>i.id===id);if(action!=='add'&&!old)return;await api('/cart','PUT',{sku_id:id,quantity:action==='cart-remove'?0:Math.max(0,(old?.quantity||0)+delta),selected:action==='add'?true:!!old.selected});if(token!==S.token)return;await render();if(action==='add')toast('已加入购物车，底部可查看清单');});cartMutationQueue=task;return task;}
+
+function saveCheckoutPreferences(){sessionStorage.setItem('jm-preferences:'+S.user.id,JSON.stringify({method:S.method,addressId:S.addressId,addressChosen:S.addressChosen,couponId:S.couponId}));}
+function pendingOrderKey(){return 'jm-web-pending:'+S.user.id;}
+function readPendingOrder(){return JSON.parse(sessionStorage.getItem(pendingOrderKey())||'null');}
+async function submitShoppingOrder(pending){
+ if(!pending||S.orderSubmitting)return;
+ S.orderSubmitting=true;sessionStorage.setItem(pendingOrderKey(),JSON.stringify(pending));
+ try{const o=await api('/orders','POST',{quote_id:pending.quote_id},pending.key);sessionStorage.removeItem(pendingOrderKey());S.checkout=null;S.quote=null;sessionStorage.removeItem('jm-checkout');go('order',{id:o.id});toast('订单已创建，请继续模拟付款');}
+ catch(error){
+  const definitive=['quote_expired','quote_changed','closed','inactive','sold_out','stock_conflict','review_required','coupon_unavailable','coupon_minimum','delivery_hours','pickup_only','weight_required','delivery_unconfirmed','address_required','out_of_range','minimum_order'];
+  if(definitive.includes(error.code))sessionStorage.removeItem(pendingOrderKey());
+  await render();throw error;
+ }finally{S.orderSubmitting=false;}
+}

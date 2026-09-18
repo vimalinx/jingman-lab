@@ -5,6 +5,7 @@
   <form class="card" bindsubmit="queryMock">
     <view class="section">拉卡拉协议 · 本地模拟查询</view>
     <view class="foot">仅模拟条码查询，不是真实拉卡拉连接，不导入或同步库存。先由开发者启动模拟服务。</view>
+    <picker range="{{scenarios}}" value="{{scenarioIndex}}" bindchange="scenario" disabled="{{mockLoading}}"><view class="select">模拟场景：{{scenarios[scenarioIndex]}}</view></picker>
     <input name="barcode" type="text" maxlength="14" value="9900000000001" placeholder="模拟商品条码" disabled="{{mockLoading}}"/>
     <button class="small plain" form-type="submit" loading="{{mockLoading}}" disabled="{{mockLoading}}">查询模拟商品</button>
     <view wx:if="{{mockResult}}">

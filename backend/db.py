@@ -55,7 +55,7 @@ class Database:
  def initialize(self,seed=True):
   with self.connect() as c:
    c.execute('PRAGMA journal_mode=WAL')
-   c.executescript(Path(__file__).with_name('schema.sql').read_text())
+   c.executescript(Path(__file__).with_name('schema.sql').read_text(encoding='utf-8'))
   os.chmod(self.path,0o600)
   if not seed:return
   with self.tx() as c:

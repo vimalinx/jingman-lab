@@ -3,15 +3,17 @@ import argparse,subprocess,sys,tempfile,socket,time,json,os
 from pathlib import Path
 from contextlib import contextmanager
 ROOT=Path(__file__).resolve().parents[1]
-E=Path(os.environ.get('JINGMAN_EVIDENCE_DIR',str(ROOT/'output'/'verification'/time.strftime('%Y%m%d-%H%M%S')))).resolve()
+os.environ['PYTHONUTF8']='1'
+DEFAULT_EVIDENCE=(Path(os.environ['LOCALAPPDATA'])/'JingmanAcceptance'/'verification' if os.name=='nt' else ROOT/'output'/'verification')
+E=Path(os.environ.get('JINGMAN_EVIDENCE_DIR',str(DEFAULT_EVIDENCE/time.strftime('%Y%m%d-%H%M%S')))).resolve()
 
 def run(command,name,timeout=240):
  print('RUN',name,flush=True)
- with (E/(name+'.txt')).open('w') as f:
+ with (E/(name+'.txt')).open('w',encoding='utf-8') as f:
   result=subprocess.run(command,cwd=ROOT,stdout=f,stderr=subprocess.STDOUT,timeout=timeout)
  if result.returncode:
-  print((E/(name+'.txt')).read_text()[-8000:]);raise RuntimeError(name+' failed; see evidence/'+name+'.txt')
- print((E/(name+'.txt')).read_text()[-600:],flush=True)
+  print((E/(name+'.txt')).read_text(encoding='utf-8')[-8000:]);raise RuntimeError(name+' failed; see evidence/'+name+'.txt')
+ print((E/(name+'.txt')).read_text(encoding='utf-8')[-600:],flush=True)
 
 @contextmanager
 def server(label):
@@ -41,7 +43,8 @@ def main():
  os.environ['JINGMAN_EVIDENCE_DIR']=str(E)
  os.environ['JINGMAN_NATIVE_EVIDENCE_DIR']=str(E)
  if not args.http_only:
-  run([sys.executable,'-m','pytest','-q','tests','--junitxml='+str(E/'api-final.xml')],'api-final')
+  run([sys.executable,'-m','pytest','-q','tests','--basetemp='+str(E/'pytest-data'),'-o','cache_dir='+str(E/'pytest-cache'),'--junitxml='+str(E/'api-final.xml')],'api-final')
+  run(['node','tests/shopping_recovery.cjs'],'shopping-recovery')
   with server('native') as (base,creds):run(['node','tests/native_contract.cjs',base,creds],'native-final')
  with server('http') as (base,creds):run([sys.executable,'tests/http_concurrency.py','--base',base,'--credentials',creds],'http-final')
  if not args.core and not args.http_only:

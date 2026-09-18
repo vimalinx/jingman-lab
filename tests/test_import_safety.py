@@ -17,8 +17,11 @@ def test_new_database_only_and_sources_private(tmp_path):
         result=build(source,dest,True)
         assert result['total']==1
         with pytest.raises(FileExistsError):build(source,dest,True)
-    assert os.stat(dest).st_mode & 0o777 == 0o700
-    assert os.stat(dest/'jingman.sqlite3').st_mode & 0o777 == 0o600
+    # POSIX mode assertions do not represent Windows ACLs. Keep business checks
+    # below active on Windows; do not skip the entire import-safety test.
+    if os.name != 'nt':
+        assert os.stat(dest).st_mode & 0o777 == 0o700
+        assert os.stat(dest/'jingman.sqlite3').st_mode & 0o777 == 0o600
     from fastapi.testclient import TestClient
     from backend.app import create_app
     with TestClient(create_app(dest/'jingman.sqlite3','a'*32,'b'*40,lab_enabled=True)) as c:

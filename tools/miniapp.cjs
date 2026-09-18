@@ -57,7 +57,8 @@ function doctor() {
   }
   let ciVersion = '未安装';
   try { ciVersion = require('miniprogram-ci/package.json').version; } catch {}
-  const python = fs.existsSync(path.join(root, '.venv/bin/python')) ? path.join(root, '.venv/bin/python') : 'python3';
+  const candidates = [process.env.JINGMAN_PYTHON, path.join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'), 'python3', 'python'].filter(Boolean);
+  const python = candidates.find(p => version(p) !== '未安装') || 'python3';
   const deps = child.spawnSync(python, ['-c', 'import fastapi,uvicorn; print(fastapi.__version__,uvicorn.__version__)'], { encoding: 'utf8' });
   if (deps.status !== 0) failures.push('Python 运行依赖缺失');
   if (Number(process.versions.node.split('.')[0]) < 22) failures.push('开发工具要求 Node.js 22 或更高');

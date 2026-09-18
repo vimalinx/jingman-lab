@@ -6,7 +6,15 @@ Page(A.define({
         fulfillment: null, channelIndex: 0, channels: ['自提和配送', '仅限自提'],
         reviewOpen: false, reviewLoading: false, reviewItems: [], reviewTotal: 0,
         sourceTotal: 0, reviewPage: 1, reviewPages: 1, loading: false,
-        mockLoading: false, mockResult: null },
+        mockLoading: false, mockResult: null,
+        scenarioIndex: 0, scenarios: ['正常响应','未找到商品','业务拒绝','签名被篡改','流水号不匹配','响应过期','异常HTTP状态','查询超时'] },
+    async scenario(e) {
+        if (this.data.mockLoading) return;
+        const index = Number(e.detail.value);
+        const names = ['success','empty','business-error','bad-signature','wrong-sid','stale','http203','timeout'];
+        await A.call('/admin/lakala-mock/scenario', 'PUT', { scenario: names[index] });
+        this.setData({ scenarioIndex: index, mockResult: null, error: '' });
+    },
     async onShow() {
         if (!A.requireLogin()) return;
         await this.loadPage(this.data.page);

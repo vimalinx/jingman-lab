@@ -19,6 +19,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .db import Database
 from .service import Retail, Problem, fail, row, rows, dump, identifier
 from .fulfillment import pickup_restriction
+from .payment_ports import payment_provider
 
 class StrictModel(BaseModel):model_config=ConfigDict(extra='forbid',strict=True,allow_inf_nan=False)
 class SessionInput(StrictModel):
@@ -44,6 +45,8 @@ class QuoteInput(StrictModel):
   return self
 class OrderInput(StrictModel):quote_id:str=Field(min_length=8,max_length=80)
 class MockBarcodeInput(StrictModel):barcode:str=Field(pattern=r'^[0-9]{8,14}$')
+class MockScenarioInput(StrictModel):
+ scenario:Literal['success','empty','business-error','bad-signature','wrong-sid','stale','http203','timeout']
 class PaymentInput(StrictModel):success:bool=True
 class PaymentEvent(StrictModel):
  event_id:str=Field(min_length=4,max_length=100)
@@ -140,6 +143,7 @@ def create_app(db_path:str|Path,access_key:str,webhook_secret:str,*,lab_enabled=
  if not lab_enabled:raise RuntimeError('Local integration laboratory only. Explicit lab_enabled is required; there is no production mode.')
  if len(access_key)<24 or len(webhook_secret)<32:raise RuntimeError('Random laboratory access key and webhook secret required')
  db=Database(db_path,clock);db.initialize();engine=Retail(db)
+ payments=payment_provider(engine)
  @asynccontextmanager
  async def lifespan(app):
   async def work():
@@ -212,7 +216,7 @@ def create_app(db_path:str|Path,access_key:str,webhook_secret:str,*,lab_enabled=
   with db.tx() as c:c.execute('DELETE FROM sessions WHERE token_hash=?',(hashlib.sha256(authorization[7:].encode()).hexdigest(),))
   return {'ok':True}
  @app.get('/api/health')
- def health():return {'ok':True,'mode':'local-laboratory','version':'0.2.0','database':'SQLite','external_providers':'simulated'}
+ def health():return {'ok':True,'mode':'local-laboratory','version':'0.2.0','database':'SQLite','external_providers':'simulated','instance':hashlib.sha256(str(Path(db.path).resolve()).encode()).hexdigest()[:16]}
  @app.get('/api/store')
  def store(store_id:int=1):
   with db.read() as c:
@@ -231,6 +235,16 @@ def create_app(db_path:str|Path,access_key:str,webhook_secret:str,*,lab_enabled=
   except httpx.TimeoutException:fail(504,'mock_timeout','本地模拟查询超时；未自动重试、未写库存')
   except (IntegrationBlocked,ValueError,OSError,KeyError,httpx.HTTPError):
    fail(502,'mock_rejected','本地模拟连接或验签未通过；未导入商品、未写库存。请核对服务场景与配置。')
+ @app.put('/api/admin/lakala-mock/scenario')
+ def mock_scenario(data:MockScenarioInput,actor=Depends(operator)):
+  if not lakala_mock_config:fail(409,'mock_disabled','本地模拟服务未配置')
+  from .lakala_mock import load_config
+  load_config(lakala_mock_config)
+  destination=Path(lakala_mock_config).parent/'scenario.json'
+  temporary=destination.with_suffix('.tmp')
+  temporary.write_text(dump({'scenario':data.scenario}),encoding='utf-8')
+  temporary.replace(destination)
+  return {'mock':True,'scenario':data.scenario,'real_provider_called':False}
  @app.get('/api/admin/import-review')
  def import_review(actor=Depends(manager)):
   with db.read() as c:
@@ -337,9 +351,21 @@ def create_app(db_path:str|Path,access_key:str,webhook_secret:str,*,lab_enabled=
  def gateway(oid:str,data:PaymentInput,actor=Depends(customer)):
   event=engine.gateway_charge(actor,oid,data.success);return {'event':event,'signature':app.state.sign(event)}
  @app.post('/api/lab/pay/{oid}')
+ @app.post('/api/payments/{oid}/simulate')
  def mock_pay(oid:str,data:PaymentInput,actor=Depends(customer)):
-  event=engine.gateway_charge(actor,oid,data.success);validated=verify_payload(dump(event).encode(),app.state.sign(event),PaymentEvent)
+  event=payments.create_payment(actor,oid,success=data.success);validated=verify_payload(dump(event).encode(),app.state.sign(event),PaymentEvent)
   result=engine.payment_event(validated);return {'callback':result,'order':engine.order(actor,oid),'simulated':True}
+ @app.get('/api/payments/{oid}')
+ def payment_status(oid:str,actor=Depends(customer)):
+  return payments.query_payment(actor,oid)
+ @app.post('/api/payments/{oid}/prepay')
+ def real_prepay(oid:str,actor=Depends(customer)):
+  engine.order(actor,oid)
+  fail(503,'payment_not_configured','预留真实支付接口，尚未配置；请使用明确标识的模拟支付')
+ @app.post('/api/payments/wechat/notify')
+ @app.post('/api/payments/wechat/refund-notify')
+ async def real_notify(request:Request):
+  fail(503,'payment_not_configured','真实支付回调验签解密尚未接入，不接收付款成功通知')
  @app.post('/api/orders/{oid}/aftersale')
  def aftersale(oid:str,data:AfterSaleInput,actor=Depends(customer),key=Depends(idem)):return engine.request_aftersale(actor,oid,data.reason,key)
  @app.post('/api/admin/orders/{oid}/accept')
