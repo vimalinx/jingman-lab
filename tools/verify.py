@@ -43,7 +43,9 @@ def main():
  os.environ['JINGMAN_EVIDENCE_DIR']=str(E)
  os.environ['JINGMAN_NATIVE_EVIDENCE_DIR']=str(E)
  if not args.http_only:
-  run([sys.executable,'-m','pytest','-q','tests','--basetemp='+str(E/'pytest-data'),'-o','cache_dir='+str(E/'pytest-cache'),'--junitxml='+str(E/'api-final.xml')],'api-final')
+  # Let pytest allocate private system temporary directories outside the source.
+  # Evidence may live under ROOT, but generated mock keys must never live there.
+  run([sys.executable,'-m','pytest','-q','tests','-o','cache_dir='+str(E/'pytest-cache'),'--junitxml='+str(E/'api-final.xml')],'api-final')
   run(['node','tests/shopping_recovery.cjs'],'shopping-recovery')
   with server('native') as (base,creds):run(['node','tests/native_contract.cjs',base,creds],'native-final')
  with server('http') as (base,creds):run([sys.executable,'tests/http_concurrency.py','--base',base,'--credentials',creds],'http-final')
